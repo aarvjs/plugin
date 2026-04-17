@@ -1,0 +1,447 @@
+/* =====================================================
+   AI TRAINER PLUGIN — style.css
+   Dark, glassmorphic, mobile-first design
+   ===================================================== */
+
+/* ── Reset ─────────────────────────────────────────── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --font: 'Inter', system-ui, -apple-system, sans-serif;
+  --accent: #00e5ff;
+  --good: #00e676;
+  --warn: #ffab00;
+  --bad: #ff5252;
+  --glass: rgba(8, 8, 20, 0.68);
+  --glass-lite: rgba(8, 8, 20, 0.42);
+  --border: rgba(255, 255, 255, 0.10);
+  --text: #ffffff;
+  --muted: rgba(255, 255, 255, 0.55);
+  --radius: 16px;
+  --radius-sm: 10px;
+  --ease: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #000;
+  font-family: var(--font);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+
+/* ── Shell ─────────────────────────────────────────── */
+#app {
+  position: fixed;
+  inset: 0;
+}
+
+/* ── Video + Canvas ────────────────────────────────── */
+#videoEl {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1);
+  /* mirror front camera */
+}
+
+#poseCanvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  transform: scaleX(-1);
+  /* match mirrored video */
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* ── Vignette ──────────────────────────────────────── */
+#vignette {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  background: linear-gradient(to bottom,
+      rgba(0, 0, 0, 0.60) 0%,
+      transparent 20%,
+      transparent 65%,
+      rgba(0, 0, 0, 0.80) 100%);
+}
+
+/* ── UI Layer ──────────────────────────────────────── */
+#ui {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  pointer-events: none;
+}
+
+/* ── Top Bar ───────────────────────────────────────── */
+#topBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  padding-top: max(16px, env(safe-area-inset-top, 16px));
+  pointer-events: all;
+}
+
+#backBtn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--glass);
+  border: 1px solid var(--border);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 8px 16px;
+  border-radius: 100px;
+  cursor: pointer;
+  transition: opacity 0.2s, transform 0.15s;
+}
+
+#backBtn:active {
+  opacity: 0.65;
+  transform: scale(0.95);
+}
+
+#workoutBadge {
+  background: var(--glass);
+  border: 1px solid var(--border);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-radius: 100px;
+  padding: 7px 18px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+/* ── Center Area ───────────────────────────────────── */
+#middle {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Center Toast */
+#toast {
+  opacity: 0;
+  transform: translateY(8px) scale(0.97);
+  transition: opacity 0.3s var(--ease), transform 0.3s var(--ease);
+  background: var(--glass);
+  border: 1px solid var(--border);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border-radius: var(--radius);
+  padding: 18px 28px;
+  text-align: center;
+  max-width: 290px;
+  pointer-events: none;
+}
+
+#toast.show {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+#toastIcon {
+  font-size: 30px;
+  margin-bottom: 6px;
+}
+
+#toastText {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+/* ── Bottom Panel ──────────────────────────────────── */
+#bottomPanel {
+  padding: 14px 18px;
+  padding-bottom: max(18px, env(safe-area-inset-bottom, 18px));
+  pointer-events: all;
+}
+
+/* Cards Row */
+#cardsRow {
+  display: flex;
+  gap: 10px;
+}
+
+.card {
+  flex: 1;
+  background: var(--glass);
+  border: 1px solid var(--border);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  overflow: hidden;
+}
+
+.card-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* Rep Number */
+#repNum {
+  font-size: 52px;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  transition: transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+#repNum.bump {
+  transform: scale(1.3);
+}
+
+/* Status */
+#statusIcon {
+  font-size: 22px;
+}
+
+#statusText {
+  font-size: 16px;
+  font-weight: 700;
+  text-align: center;
+  transition: color 0.25s var(--ease);
+}
+
+#statusHint {
+  font-size: 11px;
+  color: var(--muted);
+  text-align: center;
+  margin-top: 1px;
+}
+
+.c-good {
+  color: var(--good);
+}
+
+.c-warn {
+  color: var(--warn);
+}
+
+.c-bad {
+  color: var(--bad);
+}
+
+.c-muted {
+  color: var(--muted);
+}
+
+/* Angle Bar */
+#angleRow {
+  margin-top: 8px;
+  background: var(--glass-lite);
+  border: 1px solid var(--border);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-radius: var(--radius-sm);
+  padding: 6px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+#angleLabel {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+#angleValue {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+#phasePill {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.07);
+  border-radius: 100px;
+  padding: 2px 10px;
+}
+
+/* ── Rep Flash ─────────────────────────────────────── */
+#repFlash {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  pointer-events: none;
+  opacity: 0;
+  background: radial-gradient(ellipse at center,
+      rgba(0, 230, 118, 0.22) 0%, transparent 70%);
+  transition: opacity 0.12s ease;
+}
+
+#repFlash.on {
+  opacity: 1;
+}
+
+/* ── Loading Screen ────────────────────────────────── */
+#loadScreen {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(0, 0, 0, 0.92);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 22px;
+  transition: opacity 0.5s ease;
+}
+
+#loadScreen.gone {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.ring {
+  width: 56px;
+  height: 56px;
+  border: 3px solid rgba(0, 229, 255, 0.18);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.load-logo {
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--accent);
+}
+
+.load-sub {
+  font-size: 13px;
+  color: var(--muted);
+  text-align: center;
+}
+
+#loadStep {
+  font-size: 12px;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+  margin-top: -10px;
+}
+
+/* ── Permission Error ──────────────────────────────── */
+#permScreen {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  background: rgba(0, 0, 0, 0.96);
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 32px;
+  text-align: center;
+}
+
+#permScreen.show {
+  display: flex;
+}
+
+#permScreen .pe-icon {
+  font-size: 56px;
+}
+
+#permScreen h2 {
+  font-size: 22px;
+  font-weight: 700;
+}
+
+#permScreen p {
+  font-size: 14px;
+  color: var(--muted);
+  max-width: 270px;
+  line-height: 1.65;
+}
+
+#retryBtn {
+  margin-top: 10px;
+  background: var(--accent);
+  color: #000;
+  border: none;
+  font-family: var(--font);
+  font-size: 14px;
+  font-weight: 700;
+  padding: 13px 36px;
+  border-radius: 100px;
+  cursor: pointer;
+  letter-spacing: 0.04em;
+}
+
+#retryBtn:active {
+  opacity: 0.75;
+}
+
+/* ── Responsive ────────────────────────────────────── */
+@media (max-height: 620px) {
+  #repNum {
+    font-size: 38px;
+  }
+
+  .card {
+    padding: 10px 14px;
+  }
+}
+
+@media (min-width: 560px) {
+
+  #bottomPanel,
+  #topBar {
+    max-width: 520px;
+    margin-inline: auto;
+  }
+}
