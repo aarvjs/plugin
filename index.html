@@ -3,142 +3,97 @@
 
 <head>
   <meta charset="UTF-8" />
-  <!--
-    viewport: no zoom, cover notch areas via viewport-fit=cover
-    All padding uses env(safe-area-inset-*) in CSS.
-  -->
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0,
-                 user-scalable=no, viewport-fit=cover" />
-
-  <!-- PWA / WebView hints -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="theme-color" content="#000000" />
-
-  <!-- SEO -->
-  <title>AI Trainer · Real-Time Pose Detection</title>
-  <meta name="description" content="Real-time AI fitness trainer with MediaPipe Pose Detection.
-                 Counts push-ups, squats, curls and more. Works inside Flutter WebView." />
-
-  <!-- Inter Font (single weight bundle via variable font) -->
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-
-  <!-- Styles -->
+  <title>Fitlix AI Trainer</title>
   <link rel="stylesheet" href="style.css" />
 
-  <!--
-    MediaPipe Pose — loaded via CDN.
-    Exposes the global `Pose` class.
-    No npm, no build step → GitHub Pages compatible.
-  -->
-  <script defer src="https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/pose.js"
-    crossorigin="anonymous"></script>
+  <!-- MediaPipe Pose via CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
 </head>
 
 <body>
-  <div id="app">
 
-    <!-- ══════════════════════════════════════════════
-       VIDEO + CANVAS  (video is background)
-       Canvas is overlaid on top — z-index handled in CSS
-       ══════════════════════════════════════════════ -->
-    <video id="videoEl" playsinline muted autoplay aria-hidden="true"></video>
-    <canvas id="poseCanvas" aria-hidden="true"></canvas>
+  <!-- ══════════════════ LOADING SCREEN ══════════════════ -->
+  <div id="loading-screen">
+    <div class="loading-inner">
+      <div class="logo-mark">
+        <svg viewBox="0 0 60 60" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="30" cy="12" r="6" fill="currentColor" />
+          <line x1="30" y1="18" x2="30" y2="36" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" />
+          <line x1="30" y1="28" x2="14" y2="22" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" />
+          <line x1="30" y1="28" x2="46" y2="22" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" />
+          <line x1="30" y1="36" x2="20" y2="52" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" />
+          <line x1="30" y1="36" x2="40" y2="52" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" />
+        </svg>
+      </div>
+      <h1 class="loading-title">Fitlix <span>AI</span> Trainer</h1>
+      <p class="loading-sub">Opening Fitlix AI Trainer...</p>
+      <div class="loader-track">
+        <div class="loader-bar" id="loader-bar"></div>
+      </div>
+    </div>
+  </div>
 
-    <!-- Dark vignette gradient overlay -->
-    <div id="vignette" aria-hidden="true"></div>
+  <!-- ══════════════════ MAIN APP ══════════════════ -->
+  <div id="app" class="hidden">
 
-    <!-- Rep count flash (green pulse on rep complete) -->
-    <div id="repFlash" aria-hidden="true"></div>
+    <!-- TOP BAR -->
+    <header id="top-bar">
+      <button id="back-btn" aria-label="Go back" onclick="handleBack()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
+          stroke-linejoin="round">
+          <polyline points="15 18 9 12 15 6"></polyline>
+        </svg>
+      </button>
+      <div id="workout-label">
+        <span id="workout-icon">🏋️</span>
+        <span id="workout-name">Workout</span>
+      </div>
+      <div id="rep-badge">
+        <span id="top-reps">0</span>
+        <span class="rep-label">REPS</span>
+      </div>
+    </header>
 
-    <!-- ══════════════════════════════════════════════
-       UI LAYER
-       ══════════════════════════════════════════════ -->
-    <div id="ui">
+    <!-- CAMERA + CANVAS -->
+    <div id="camera-wrap">
+      <video id="input-video" playsinline autoplay muted></video>
+      <canvas id="pose-canvas"></canvas>
 
-      <!-- ┌─ TOP BAR ──────────────────────────────── -->
-      <header id="topBar">
-        <button id="backBtn" aria-label="Go back">
-          <!-- Chevron left icon (inline SVG, zero HTTP cost) -->
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
-            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <polyline points="15 18 9 12 15 6" />
-          </svg>
-          Back
-        </button>
-
-        <!-- Populated by JS from ?workout= param -->
-        <div id="workoutBadge" aria-live="polite">AI Trainer</div>
-      </header>
-
-      <!-- ┌─ MIDDLE (center toast area) ───────────── -->
-      <div id="middle">
-        <div id="toast" role="status" aria-live="polite">
-          <div id="toastIcon" class="msg-icon"></div>
-          <div id="toastText" class="msg-text"></div>
-        </div>
+      <!-- Overlay messages -->
+      <div id="frame-alert" class="frame-alert hidden">
+        <span>📐 Stand in frame</span>
       </div>
 
-      <!-- ┌─ BOTTOM PANEL ──────────────────────────── -->
-      <footer id="bottomPanel">
-
-        <!-- Stat Cards -->
-        <div id="cardsRow">
-
-          <!-- Reps -->
-          <div class="card" id="repCard">
-            <span class="card-label">Reps</span>
-            <div id="repNum" aria-live="polite" aria-atomic="true">0</div>
-          </div>
-
-          <!-- Status -->
-          <div class="card" id="statusCard">
-            <div id="statusIcon" aria-hidden="true">⏳</div>
-            <div id="statusText" class="c-muted">Loading…</div>
-            <div id="statusHint"></div>
-          </div>
-
-        </div>
-
-        <!-- Angle / Phase Row -->
-        <div id="angleRow" aria-live="polite">
-          <span id="angleLabel">Joint Angle</span>
-          <span id="angleValue">—</span>
-          <span id="phasePill">—</span>
-        </div>
-
-      </footer>
-    </div><!-- /#ui -->
-
-    <!-- ══════════════════════════════════════════════
-       LOADING SCREEN
-       ══════════════════════════════════════════════ -->
-    <div id="loadScreen" role="status" aria-label="Loading AI Trainer">
-      <div class="ring"></div>
-      <div class="load-logo">AI Trainer</div>
-      <div class="load-sub">Powered by MediaPipe Pose</div>
-      <div id="loadStep">Initializing…</div>
+      <div id="feedback-toast" class="feedback-toast hidden"></div>
     </div>
 
-    <!-- ══════════════════════════════════════════════
-       PERMISSION ERROR
-       ══════════════════════════════════════════════ -->
-    <div id="permScreen" role="alert" aria-live="assertive">
-      <div class="pe-icon">📵</div>
-      <h2>Camera Access Required</h2>
-      <p>
-        This AI Trainer needs your camera to detect poses and count reps.<br />
-        Please allow access and tap below.
-      </p>
-      <button id="retryBtn">Allow &amp; Retry</button>
+    <!-- BOTTOM STATS CARD -->
+    <div id="stats-card">
+      <div class="stat-block">
+        <div class="stat-value" id="stat-reps">0</div>
+        <div class="stat-label">REPS</div>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-block">
+        <div class="stat-value" id="stat-angle">—°</div>
+        <div class="stat-label">ANGLE</div>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-block">
+        <div class="status-indicator" id="status-dot"></div>
+        <div class="stat-value status-text" id="stat-status">Ready</div>
+        <div class="stat-label">STATUS</div>
+      </div>
     </div>
 
-  </div><!-- /#app -->
+  </div>
 
-  <!-- Script loaded last — DOMContentLoaded listener inside -->
   <script src="script.js"></script>
 </body>
 
