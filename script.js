@@ -14,14 +14,78 @@ const ANGLE_SMOOTH_WINDOW = 5;         // moving-average window for angles
 const FEEDBACK_THROTTLE_MS = 1200;      // how often to update feedback toast
 
 const WorkoutMeta = {
-  pushup: { name: 'Push-Up', icon: '💪', joints: ['elbow', 'body'], primary: 'elbow' },
-  squat: { name: 'Squat', icon: '🏋️', joints: ['knee', 'hip'], primary: 'knee' },
-  pullup: { name: 'Pull-Up', icon: '🦾', joints: ['elbow', 'body'], primary: 'elbow' },
-  lunge: { name: 'Lunge', icon: '🦵', joints: ['knee'], primary: 'knee' },
-  situp: { name: 'Sit-Up', icon: '🔥', joints: ['hip'], primary: 'hip' },
-  bicep_curl: { name: 'Bicep Curl', icon: '💪', joints: ['elbow'], primary: 'elbow' },
-  shoulder_press: { name: 'Shoulder Press', icon: '🏋️', joints: ['elbow'], primary: 'elbow' },
-  jumping_jack: { name: 'Jumping Jacks', icon: '⚡', joints: ['arm_spread'], primary: 'arm_spread' },
+  pushup: { 
+    name: 'Push-Up', icon: '💪', joints: ['elbow', 'body'], primary: 'elbow',
+    guide: [
+      "Place hands slightly wider than shoulder-width.",
+      "Keep your body in a straight line from head to heels. Don't sag your hips.",
+      "Lower your body until your chest nearly touches the floor.",
+      "Push back up to the starting position."
+    ]
+  },
+  squat: { 
+    name: 'Squat', icon: '🏋️', joints: ['knee', 'hip'], primary: 'knee',
+    guide: [
+      "Stand with feet shoulder-width apart.",
+      "Keep your chest up and back straight.",
+      "Lower your hips like sitting in a chair until knees are 90 degrees.",
+      "Keep your weight on your heels, don't let knees cave in."
+    ]
+  },
+  pullup: { 
+    name: 'Pull-Up', icon: '🦾', joints: ['elbow', 'body'], primary: 'elbow',
+    guide: [
+      "Grip the bar slightly wider than shoulder-width.",
+      "Hang completely with arms fully extended.",
+      "Pull yourself up until your chin clears the bar.",
+      "Lower yourself smoothly back to the start without swinging."
+    ]
+  },
+  lunge: { 
+    name: 'Lunge', icon: '🦵', joints: ['knee'], primary: 'knee',
+    guide: [
+      "Stand tall, step one foot forward.",
+      "Lower your body until both knees are bent at a 90-degree angle.",
+      "Ensure your front knee doesn't push past your toes.",
+      "Push off the front foot to return to the start."
+    ]
+  },
+  situp: { 
+    name: 'Sit-Up', icon: '🔥', joints: ['hip'], primary: 'hip',
+    guide: [
+      "Lie on your back with knees bent and feet flat.",
+      "Place fingertips behind your ears or cross arms on chest.",
+      "Engage core and lift your upper body off the ground.",
+      "Lower your back down with control."
+    ]
+  },
+  bicep_curl: { 
+    name: 'Bicep Curl', icon: '💪', joints: ['elbow'], primary: 'elbow',
+    guide: [
+      "Stand tall holding weights with palms facing forward.",
+      "Keep your elbows tucked close to your sides. Don't swing.",
+      "Curl the weights up toward your shoulders.",
+      "Slowly lower back down to full extension."
+    ]
+  },
+  shoulder_press: { 
+    name: 'Shoulder Press', icon: '🏋️', joints: ['elbow'], primary: 'elbow',
+    guide: [
+      "Hold weights at shoulder height with palms facing out.",
+      "Press weights overhead until arms are fully extended.",
+      "Do not lock out your elbows completely.",
+      "Lower slowly back to shoulder height without leaning back."
+    ]
+  },
+  jumping_jack: { 
+    name: 'Jumping Jacks', icon: '⚡', joints: ['arm_spread'], primary: 'arm_spread',
+    guide: [
+      "Stand upright with legs together and arms at your sides.",
+      "Jump up, spreading your legs wider than shoulders.",
+      "Swing your arms directly overhead at the same time.",
+      "Jump back to the starting position."
+    ]
+  },
 };
 
 // Workout-specific thresholds: [downAngle, upAngle]
@@ -143,7 +207,9 @@ function isBodyStraight(lm) {
   for (const [s, h, a] of sides) {
     if (!allVisible(lm, [s, h, a], 0.5)) continue;
     const angle = angleBetween(lm[s], lm[h], lm[a]);
-    if (angle < 135) return false; // hip bent too much
+    // Changed so it simply relies on the analyzePosture explicit sagging/raising check
+    // but remains here as a fallback
+    if (angle < 135) return false;
   }
   return true;
 }
@@ -155,27 +221,73 @@ function analyzePosture(lm, primaryAngle) {
   let isOk = true;
   let errorMsg = null;
 
-  // Horizontal Body Alignment Check
+  // Horizontal Body Alignment Check (Pushup, Plank, Pullup)
   if (['pushup', 'pullup', 'plank'].includes(workoutKey)) {
-    if (!isBodyStraight(lm)) {
-      isOk = false;
-      errorMsg = 'Keep Back Straight!';
+    if (allVisible(lm, [LM.L_SHOULDER, LM.L_HIP, LM.L_ANKLE], 0.5) ||
+        allVisible(lm, [LM.R_SHOULDER, LM.R_HIP, LM.R_ANKLE], 0.5)) {
+      
+      const side = allVisible(lm, [LM.L_SHOULDER, LM.L_HIP, LM.L_ANKLE], 0.5) ? 'L' : 'R';
+      const s = lm[LM[`${side}_SHOULDER`]];
+      const h = lm[LM[`${side}_HIP`]];
+      const a = lm[LM[`${side}_ANKLE`]];
+      
+      const angle = angleBetween(s, h, a);
+      if (angle < 155) {
+        isOk = false;
+        const midY = (s.y + a.y) / 2;
+        if (h.y > midY + 0.05) {
+          errorMsg = "Don't let your hips sag!";
+        } else if (h.y < midY - 0.05) {
+          errorMsg = "Lower your glutes!";
+        } else {
+          errorMsg = 'Keep back straight!';
+        }
+      }
     }
   }
 
-  // Squat specific checks: Knee tracking over ankle
-  if (workoutKey === 'squat' && isVisible(lm, LM.L_KNEE) && isVisible(lm, LM.L_ANKLE)) {
-     if (repPhase === 'UP' && primaryAngle > 110 && primaryAngle < 150) {
-       // if they are halfway down, encourage them to go all the way
-       // We rely on getFeedback for soft warnings, so we only trigger errors for form breaks
-       // Currently, let's keep squat form breaks to basic body constraints if needed
+  // Squat specific checks: Torso lean
+  if (workoutKey === 'squat') {
+     if (isVisible(lm, LM.L_SHOULDER) && isVisible(lm, LM.L_HIP)) {
+       const shoulder = lm[LM.L_SHOULDER];
+       const hip = lm[LM.L_HIP];
+       const verticalPoint = { x: hip.x, y: hip.y - 1 };
+       const torsoAngle = angleBetween(shoulder, hip, verticalPoint);
+       
+       if (torsoAngle > 45 && repPhase === 'DOWN' && primaryAngle < 150) {
+         isOk = false;
+         errorMsg = "Keep your chest up!";
+       }
      }
   }
 
-  // Lunge check
+  // Lunge check: Torso upright
   if (workoutKey === 'lunge') {
-    if (repPhase === 'UP' && primaryAngle > 110 && primaryAngle < 150) {
-       // Just structural stub for specific lunge form breaks
+    if (isVisible(lm, LM.L_SHOULDER) && isVisible(lm, LM.L_HIP)) {
+      const shoulder = lm[LM.L_SHOULDER];
+      const hip = lm[LM.L_HIP];
+      const verticalPoint = { x: hip.x, y: hip.y - 1 };
+      const torsoAngle = angleBetween(shoulder, hip, verticalPoint);
+      
+      if (torsoAngle > 35 && primaryAngle < 140) {
+        isOk = false;
+        errorMsg = "Keep your torso upright!";
+      }
+    }
+  }
+
+  // Bicep Curl check: Elbow swinging
+  if (workoutKey === 'bicep_curl') {
+    if (isVisible(lm, LM.L_ELBOW) && isVisible(lm, LM.L_SHOULDER)) {
+       const elbow = lm[LM.L_ELBOW];
+       const shoulder = lm[LM.L_SHOULDER];
+       const verticalPoint = { x: shoulder.x, y: shoulder.y + 1 };
+       const elbowSwingAngle = angleBetween(elbow, shoulder, verticalPoint);
+       
+       if (elbowSwingAngle > 25 && repPhase === 'UP' && primaryAngle < 150) {
+         isOk = false;
+         errorMsg = "Keep elbows tucked to your sides!";
+       }
     }
   }
 
@@ -648,7 +760,46 @@ function showApp() {
     loadScreen.style.display = 'none';
     app.classList.remove('hidden');
     app.classList.add('show');
+    
+    // Auto-show guide explicitly if it's the first time
+    if (!sessionStorage.getItem(`guide_${workoutKey}`)) {
+      setTimeout(toggleGuide, 400); // Wait for app reveal
+      sessionStorage.setItem(`guide_${workoutKey}`, 'true');
+    }
   }, 500);
+}
+
+/* ──────────────────────────────────────────────
+   17. GUIDE LOGIC
+────────────────────────────────────────────── */
+function toggleGuide() {
+  const overlay = document.getElementById('guide-overlay');
+  
+  if (!overlay.classList.contains('hidden')) {
+    overlay.classList.add('hidden');
+    return;
+  }
+  
+  // Populate guide data before showing
+  document.getElementById('guide-title').textContent = meta.name;
+  document.getElementById('guide-icon').textContent = meta.icon;
+  
+  const list = document.getElementById('guide-list');
+  list.innerHTML = '';
+  
+  if (meta.guide && meta.guide.length > 0) {
+    meta.guide.forEach(step => {
+      const li = document.createElement('li');
+      li.textContent = step;
+      list.appendChild(li);
+    });
+  } else {
+    const li = document.createElement('li');
+    li.textContent = "Maintain good form and follow the app's audio/visual cues.";
+    list.appendChild(li);
+  }
+  
+  overlay.classList.remove('hidden');
 }
 
 /* ──────────────────────────────────────────────
