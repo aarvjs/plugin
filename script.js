@@ -12,6 +12,25 @@ const CONFIDENCE_THRESHOLD = 0.60;
 const MIN_REP_DURATION_MS = 800;       // anti-cheat: ignore reps faster than 0.8s
 const ANGLE_SMOOTH_WINDOW = 5;         // moving-average window for angles
 const FEEDBACK_THROTTLE_MS = 1200;      // how often to update feedback toast
+const MIN_GOOD_FORM_FRAMES = 2;        // require stable posture before counting reps
+const PHASE_CONFIRM_FRAMES = 2;        // avoid phase flips from single noisy frame
+const DOWN_HOLD_MIN_MS = 120;          // minimum time spent in DOWN phase
+const THRESHOLD_HYSTERESIS_DEG = 4;    // extra margin before phase switches
+const CALIBRATION_MIN_FRAMES = 28;     // auto-personalization warmup
+const CALIBRATION_MAX_FRAMES = 120;
+const CALIBRATION_MIN_RANGE_DEG = 24;
+
+const INVERTED_WORKOUTS = new Set(['pullup', 'bicep_curl']);
+const MIN_REP_RANGE_BY_WORKOUT = {
+  pushup: 24,
+  squat: 30,
+  pullup: 28,
+  lunge: 24,
+  situp: 28,
+  bicep_curl: 30,
+  shoulder_press: 34,
+  jumping_jack: 26,
+};
 
 const WorkoutMeta = {
   pushup: { 
@@ -88,6 +107,17 @@ const WorkoutMeta = {
   },
 };
 
+const WorkoutVideoMeta = {
+  pushup: { good: 'videos/pushup-good.mp4', bad: 'videos/pushup-bad.mp4' },
+  squat: { good: 'videos/squat-good.mp4', bad: 'videos/squat-bad.mp4' },
+  pullup: { good: 'videos/pullup-good.mp4', bad: 'videos/pullup-bad.mp4' },
+  lunge: { good: 'videos/lunge-good.mp4', bad: 'videos/lunge-bad.mp4' },
+  situp: { good: 'videos/situp-good.mp4', bad: 'videos/situp-bad.mp4' },
+  bicep_curl: { good: 'videos/bicep_curl-good.mp4', bad: 'videos/bicep_curl-bad.mp4' },
+  shoulder_press: { good: 'videos/shoulder_press-good.mp4', bad: 'videos/shoulder_press-bad.mp4' },
+  jumping_jack: { good: 'videos/jumping_jack-good.mp4', bad: 'videos/jumping_jack-bad.mp4' },
+};
+
 // Workout-specific thresholds: [downAngle, upAngle]
 const WorkoutThresholds = {
   pushup: { down: 90, up: 145, downLabel: 'Go Lower', upLabel: 'Push Up' },
@@ -97,8 +127,12 @@ const WorkoutThresholds = {
   situp: { down: 60, up: 120, downLabel: 'Go Down', upLabel: 'Sit Up' },
   bicep_curl: { down: 160, up: 50, downLabel: 'Lower Arm', upLabel: 'Curl Up' },
   shoulder_press: { down: 90, up: 160, downLabel: 'Go Lower', upLabel: 'Press Up' },
-  jumping_jack: { down: 20, up: 80, downLabel: 'Arms Out', upLabel: 'Arms Down' },
+  jumping_jack: { down: 35, up: 125, downLabel: 'Arms Up', upLabel: 'Arms Down' },
 };
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
 
 // Canonical landmark indices from MediaPipe Pose
 const LM = {
@@ -119,6 +153,29 @@ const LM = {
   L_FOOT_I: 31, R_FOOT_I: 32,
 };
 
+const SIDE = {
+  L: {
+    SHOULDER: LM.L_SHOULDER,
+    ELBOW: LM.L_ELBOW,
+    WRIST: LM.L_WRIST,
+    EAR: LM.L_EAR,
+    HIP: LM.L_HIP,
+    KNEE: LM.L_KNEE,
+    ANKLE: LM.L_ANKLE,
+    FOOT: LM.L_FOOT_I,
+  },
+  R: {
+    SHOULDER: LM.R_SHOULDER,
+    ELBOW: LM.R_ELBOW,
+    WRIST: LM.R_WRIST,
+    EAR: LM.R_EAR,
+    HIP: LM.R_HIP,
+    KNEE: LM.R_KNEE,
+    ANKLE: LM.R_ANKLE,
+    FOOT: LM.R_FOOT_I,
+  },
+};
+
 /* ──────────────────────────────────────────────
    1. URL PARAMS & WORKOUT SETUP
 ────────────────────────────────────────────── */
@@ -128,6 +185,13 @@ const rawWorkout = hashMatch || urlParams.get('workout') || null;
 const workoutKey = (rawWorkout || 'pushup').toLowerCase().replace('-', '_');
 const meta = WorkoutMeta[workoutKey] || WorkoutMeta.pushup;
 const thresholds = WorkoutThresholds[workoutKey] || WorkoutThresholds.pushup;
+let activeThresholds = { ...thresholds };
+let calibrationState = {
+  done: false,
+  frames: 0,
+  minAngle: Infinity,
+  maxAngle: -Infinity,
+};
 
 function selectWorkout(key) {
   window.location.hash = key;
@@ -151,6 +215,12 @@ const statAngleEl = document.getElementById('stat-angle');
 const statStatusEl = document.getElementById('stat-status');
 const statusDotEl = document.getElementById('status-dot');
 const loaderBar = document.getElementById('loader-bar');
+const coachPreviewEl = document.getElementById('coach-preview');
+const coachPreviewTitleEl = document.getElementById('coach-preview-title');
+const coachGoodVideoEl = document.getElementById('coach-good-video');
+const coachBadVideoEl = document.getElementById('coach-bad-video');
+const coachGoodFallbackEl = document.getElementById('coach-good-fallback');
+const coachBadFallbackEl = document.getElementById('coach-bad-fallback');
 
 /* ──────────────────────────────────────────────
    3. REP STATE MACHINE
@@ -159,6 +229,15 @@ let currentReps = 0;
 let repPhase = 'UP';      // 'UP' | 'DOWN'
 let lastRepTime = 0;
 let lastFeedbackTime = 0;
+let goodFormStreak = 0;
+let lastPrimaryAngle = null;
+let lastPrimaryAngleTs = 0;
+let downFrameStreak = 0;
+let upFrameStreak = 0;
+let downEnteredAt = 0;
+let repMinAngle = Infinity;
+let repMaxAngle = -Infinity;
+let workoutEngineStarted = false;
 
 // Expose to Flutter
 window.reps = 0;
@@ -198,6 +277,141 @@ function allVisible(lm, indices, threshold = CONFIDENCE_THRESHOLD) {
   return indices.every(i => isVisible(lm, i, threshold));
 }
 
+function getSidePoint(lm, side, part) {
+  return lm[SIDE[side][part]];
+}
+
+function visibilityScore(lm, indices) {
+  return indices.reduce((sum, idx) => sum + (lm[idx]?.visibility || 0), 0);
+}
+
+function pickBestSide(lm, parts, threshold = 0.5) {
+  const leftIdx = parts.map((part) => SIDE.L[part]);
+  const rightIdx = parts.map((part) => SIDE.R[part]);
+
+  const leftReady = leftIdx.every((idx) => isVisible(lm, idx, threshold));
+  const rightReady = rightIdx.every((idx) => isVisible(lm, idx, threshold));
+
+  if (!leftReady && !rightReady) return null;
+  if (leftReady && !rightReady) return 'L';
+  if (!leftReady && rightReady) return 'R';
+
+  return visibilityScore(lm, leftIdx) >= visibilityScore(lm, rightIdx) ? 'L' : 'R';
+}
+
+function torsoLeanFromVertical(lm, side) {
+  const shoulder = getSidePoint(lm, side, 'SHOULDER');
+  const hip = getSidePoint(lm, side, 'HIP');
+  const verticalPoint = { x: hip.x, y: hip.y - 1 };
+  return angleBetween(shoulder, hip, verticalPoint);
+}
+
+function bodyLineAngle(lm, side) {
+  const shoulder = getSidePoint(lm, side, 'SHOULDER');
+  const hip = getSidePoint(lm, side, 'HIP');
+  const ankle = getSidePoint(lm, side, 'ANKLE');
+  return angleBetween(shoulder, hip, ankle);
+}
+
+function getAngleSpeed(currentAngle) {
+  const now = performance.now();
+  if (lastPrimaryAngle === null || !lastPrimaryAngleTs) {
+    lastPrimaryAngle = currentAngle;
+    lastPrimaryAngleTs = now;
+    return 0;
+  }
+
+  const dt = (now - lastPrimaryAngleTs) / 1000;
+  if (dt <= 0) return 0;
+
+  const speed = Math.abs(currentAngle - lastPrimaryAngle) / dt;
+  lastPrimaryAngle = currentAngle;
+  lastPrimaryAngleTs = now;
+  return speed;
+}
+
+function getLungeFrontSide(lm) {
+  const leftReady = allVisible(lm, [LM.L_HIP, LM.L_KNEE, LM.L_ANKLE], 0.5);
+  const rightReady = allVisible(lm, [LM.R_HIP, LM.R_KNEE, LM.R_ANKLE], 0.5);
+
+  if (!leftReady && !rightReady) return null;
+  if (leftReady && !rightReady) return 'L';
+  if (!leftReady && rightReady) return 'R';
+
+  const leftKneeAngle = angleBetween(lm[LM.L_HIP], lm[LM.L_KNEE], lm[LM.L_ANKLE]);
+  const rightKneeAngle = angleBetween(lm[LM.R_HIP], lm[LM.R_KNEE], lm[LM.R_ANKLE]);
+  return leftKneeAngle <= rightKneeAngle ? 'L' : 'R';
+}
+
+function getMinRepRange() {
+  return MIN_REP_RANGE_BY_WORKOUT[workoutKey] || 22;
+}
+
+function resetRepTracking() {
+  downFrameStreak = 0;
+  upFrameStreak = 0;
+  downEnteredAt = 0;
+  repMinAngle = Infinity;
+  repMaxAngle = -Infinity;
+}
+
+function updateThresholdCalibration(angle) {
+  if (calibrationState.done || !Number.isFinite(angle)) return;
+
+  calibrationState.frames += 1;
+  calibrationState.minAngle = Math.min(calibrationState.minAngle, angle);
+  calibrationState.maxAngle = Math.max(calibrationState.maxAngle, angle);
+
+  const range = calibrationState.maxAngle - calibrationState.minAngle;
+  const enoughFrames = calibrationState.frames >= CALIBRATION_MIN_FRAMES;
+  const shouldFinalize =
+    (enoughFrames && range >= CALIBRATION_MIN_RANGE_DEG)
+    || calibrationState.frames >= CALIBRATION_MAX_FRAMES;
+
+  if (!shouldFinalize) return;
+
+  // If user barely moved during warmup, keep defaults.
+  if (range < 16) {
+    if (calibrationState.frames >= CALIBRATION_MAX_FRAMES) {
+      calibrationState.frames = 0;
+      calibrationState.minAngle = Infinity;
+      calibrationState.maxAngle = -Infinity;
+    }
+    return;
+  }
+
+  calibrationState.done = true;
+
+  const inverted = INVERTED_WORKOUTS.has(workoutKey);
+  const minSpan = Math.max(getMinRepRange(), 18);
+  let down = thresholds.down;
+  let up = thresholds.up;
+
+  if (!inverted) {
+    down = calibrationState.minAngle + range * 0.30;
+    up = calibrationState.maxAngle - range * 0.20;
+    if (up - down < minSpan) {
+      const mid = (up + down) / 2;
+      down = mid - minSpan / 2;
+      up = mid + minSpan / 2;
+    }
+  } else {
+    down = calibrationState.maxAngle - range * 0.25;
+    up = calibrationState.minAngle + range * 0.25;
+    if (down - up < minSpan) {
+      const mid = (down + up) / 2;
+      up = mid - minSpan / 2;
+      down = mid + minSpan / 2;
+    }
+  }
+
+  activeThresholds = {
+    ...thresholds,
+    down: clamp(down, thresholds.down - 24, thresholds.down + 24),
+    up: clamp(up, thresholds.up - 24, thresholds.up + 24),
+  };
+}
+
 /* Body straightness check: shoulder-hip-ankle deviation */
 function isBodyStraight(lm) {
   const sides = [
@@ -217,81 +431,220 @@ function isBodyStraight(lm) {
 /* ──────────────────────────────────────────────
    4.5 POSTURE ANALYSIS HELPERS
 ────────────────────────────────────────────── */
-function analyzePosture(lm, primaryAngle) {
-  let isOk = true;
+function analyzePosture(lm, primaryAngle, angleSpeedDps = 0) {
+  let score = 100;
   let errorMsg = null;
 
-  // Horizontal Body Alignment Check (Pushup, Plank, Pullup)
-  if (['pushup', 'pullup', 'plank'].includes(workoutKey)) {
-    if (allVisible(lm, [LM.L_SHOULDER, LM.L_HIP, LM.L_ANKLE], 0.5) ||
-        allVisible(lm, [LM.R_SHOULDER, LM.R_HIP, LM.R_ANKLE], 0.5)) {
-      
-      const side = allVisible(lm, [LM.L_SHOULDER, LM.L_HIP, LM.L_ANKLE], 0.5) ? 'L' : 'R';
-      const s = lm[LM[`${side}_SHOULDER`]];
-      const h = lm[LM[`${side}_HIP`]];
-      const a = lm[LM[`${side}_ANKLE`]];
-      
-      const angle = angleBetween(s, h, a);
-      if (angle < 155) {
-        isOk = false;
-        const midY = (s.y + a.y) / 2;
-        if (h.y > midY + 0.05) {
-          errorMsg = "Don't let your hips sag!";
-        } else if (h.y < midY - 0.05) {
-          errorMsg = "Lower your glutes!";
+  const markBad = (msg, penalty = 20) => {
+    score -= penalty;
+    if (!errorMsg) errorMsg = msg;
+  };
+
+  switch (workoutKey) {
+    case 'pushup': {
+      const side = pickBestSide(lm, ['SHOULDER', 'HIP', 'ANKLE', 'WRIST'], 0.5);
+      if (!side) {
+        markBad('Turn sideways and keep full body in frame.', 50);
+        break;
+      }
+
+      const shoulder = getSidePoint(lm, side, 'SHOULDER');
+      const hip = getSidePoint(lm, side, 'HIP');
+      const ankle = getSidePoint(lm, side, 'ANKLE');
+      const wrist = getSidePoint(lm, side, 'WRIST');
+      const lineAngle = bodyLineAngle(lm, side);
+
+      if (lineAngle < 155) {
+        const midY = (shoulder.y + ankle.y) / 2;
+        if (hip.y > midY + 0.05) {
+          markBad("Don't let your hips sag!", 30);
+        } else if (hip.y < midY - 0.05) {
+          markBad('Lower your glutes slightly.', 20);
         } else {
-          errorMsg = 'Keep back straight!';
+          markBad('Keep your back straighter.', 25);
         }
       }
-    }
-  }
 
-  // Squat specific checks: Torso lean
-  if (workoutKey === 'squat') {
-     if (isVisible(lm, LM.L_SHOULDER) && isVisible(lm, LM.L_HIP)) {
-       const shoulder = lm[LM.L_SHOULDER];
-       const hip = lm[LM.L_HIP];
-       const verticalPoint = { x: hip.x, y: hip.y - 1 };
-       const torsoAngle = angleBetween(shoulder, hip, verticalPoint);
-       
-       if (torsoAngle > 45 && repPhase === 'DOWN' && primaryAngle < 150) {
-         isOk = false;
-         errorMsg = "Keep your chest up!";
-       }
-     }
-  }
-
-  // Lunge check: Torso upright
-  if (workoutKey === 'lunge') {
-    if (isVisible(lm, LM.L_SHOULDER) && isVisible(lm, LM.L_HIP)) {
-      const shoulder = lm[LM.L_SHOULDER];
-      const hip = lm[LM.L_HIP];
-      const verticalPoint = { x: hip.x, y: hip.y - 1 };
-      const torsoAngle = angleBetween(shoulder, hip, verticalPoint);
-      
-      if (torsoAngle > 35 && primaryAngle < 140) {
-        isOk = false;
-        errorMsg = "Keep your torso upright!";
+      if (Math.abs(wrist.x - shoulder.x) > 0.3) {
+        markBad('Stack wrists under shoulders.', 15);
       }
+
+      if (angleSpeedDps > 260) {
+        markBad('Move slower for controlled reps.', 10);
+      }
+      break;
     }
+
+    case 'pullup': {
+      const side = pickBestSide(lm, ['SHOULDER', 'HIP', 'ANKLE', 'ELBOW'], 0.5);
+      if (!side) {
+        markBad('Keep your side profile visible in frame.', 45);
+        break;
+      }
+
+      if (bodyLineAngle(lm, side) < 145) {
+        markBad('Avoid kipping. Keep your body tighter.', 30);
+      }
+
+      if (angleSpeedDps > 320) {
+        markBad('Control the descent; avoid swinging.', 12);
+      }
+      break;
+    }
+
+    case 'squat': {
+      const side = pickBestSide(lm, ['SHOULDER', 'HIP', 'KNEE', 'ANKLE'], 0.5);
+      if (!side) {
+        markBad('Show side profile for accurate squat coaching.', 45);
+        break;
+      }
+
+      if (torsoLeanFromVertical(lm, side) > 48 && primaryAngle < 150) {
+        markBad('Keep your chest up and spine neutral.', 25);
+      }
+
+      const knee = getSidePoint(lm, side, 'KNEE');
+      const ankle = getSidePoint(lm, side, 'ANKLE');
+      if (Math.abs(knee.x - ankle.x) > 0.18 && primaryAngle < 140) {
+        markBad('Keep knees stacked over feet.', 15);
+      }
+
+      if (allVisible(lm, [LM.L_KNEE, LM.R_KNEE, LM.L_ANKLE, LM.R_ANKLE], 0.5) && primaryAngle < 140) {
+        const kneeGap = Math.abs(lm[LM.L_KNEE].x - lm[LM.R_KNEE].x);
+        const ankleGap = Math.abs(lm[LM.L_ANKLE].x - lm[LM.R_ANKLE].x);
+        if (ankleGap > 0.04 && kneeGap < ankleGap * 0.65) {
+          markBad("Don't let your knees cave in.", 25);
+        }
+      }
+
+      if (angleSpeedDps > 240) {
+        markBad('Lower with more control.', 10);
+      }
+      break;
+    }
+
+    case 'lunge': {
+      const frontSide = getLungeFrontSide(lm);
+      if (!frontSide) {
+        markBad('Keep both legs visible for lunge analysis.', 45);
+        break;
+      }
+
+      if (torsoLeanFromVertical(lm, frontSide) > 40 && primaryAngle < 150) {
+        markBad('Keep your torso upright.', 25);
+      }
+
+      const frontKnee = getSidePoint(lm, frontSide, 'KNEE');
+      const frontAnkle = getSidePoint(lm, frontSide, 'ANKLE');
+      if (Math.abs(frontKnee.x - frontAnkle.x) > 0.18 && primaryAngle < 145) {
+        markBad('Front knee should stay over front foot.', 20);
+      }
+      break;
+    }
+
+    case 'situp': {
+      const side = pickBestSide(lm, ['SHOULDER', 'HIP', 'KNEE'], 0.5);
+      if (!side) {
+        markBad('Keep your torso and knees inside the frame.', 40);
+        break;
+      }
+
+      if (angleSpeedDps > 280) {
+        markBad('Avoid jerking. Lift with core control.', 25);
+      }
+
+      if (allVisible(lm, [LM.L_SHOULDER, LM.R_SHOULDER, LM.L_HIP, LM.R_HIP], 0.5)) {
+        const shoulderTilt = Math.abs(lm[LM.L_SHOULDER].y - lm[LM.R_SHOULDER].y);
+        if (shoulderTilt > 0.13) {
+          markBad('Avoid twisting your torso during sit-ups.', 15);
+        }
+      }
+      break;
+    }
+
+    case 'bicep_curl': {
+      const side = pickBestSide(lm, ['SHOULDER', 'ELBOW', 'WRIST', 'HIP'], 0.5);
+      if (!side) {
+        markBad('Show your full upper body in frame.', 40);
+        break;
+      }
+
+      const shoulder = getSidePoint(lm, side, 'SHOULDER');
+      const elbow = getSidePoint(lm, side, 'ELBOW');
+      if (Math.abs(elbow.x - shoulder.x) > 0.1) {
+        markBad('Keep elbows tucked to your sides.', 25);
+      }
+
+      if (torsoLeanFromVertical(lm, side) > 25) {
+        markBad("Don't swing your torso.", 20);
+      }
+
+      if (angleSpeedDps > 260) {
+        markBad('Lower the weight with control.', 12);
+      }
+      break;
+    }
+
+    case 'shoulder_press': {
+      const side = pickBestSide(lm, ['SHOULDER', 'ELBOW', 'WRIST', 'HIP', 'KNEE'], 0.5);
+      if (!side) {
+        markBad('Keep your side profile visible for shoulder press.', 40);
+        break;
+      }
+
+      const shoulder = getSidePoint(lm, side, 'SHOULDER');
+      const wrist = getSidePoint(lm, side, 'WRIST');
+      const hip = getSidePoint(lm, side, 'HIP');
+      const knee = getSidePoint(lm, side, 'KNEE');
+      const backAngle = angleBetween(shoulder, hip, knee);
+
+      if (backAngle < 150 && primaryAngle > 120) {
+        markBad('Brace your core. Avoid lower-back arch.', 25);
+      }
+
+      if (primaryAngle > 145 && Math.abs(wrist.x - shoulder.x) > 0.16) {
+        markBad('Stack wrists above shoulders at the top.', 20);
+      }
+
+      if (angleSpeedDps > 280) {
+        markBad('Press smoothly. Avoid bouncing.', 10);
+      }
+      break;
+    }
+
+    case 'jumping_jack': {
+      const needs = [
+        LM.L_SHOULDER, LM.R_SHOULDER,
+        LM.L_HIP, LM.R_HIP,
+        LM.L_WRIST, LM.R_WRIST,
+        LM.L_KNEE, LM.R_KNEE,
+        LM.L_ANKLE, LM.R_ANKLE,
+      ];
+      if (!allVisible(lm, needs, 0.5)) {
+        markBad('Keep your full body centered in frame.', 50);
+        break;
+      }
+
+      const leftArmLift = angleBetween(lm[LM.L_WRIST], lm[LM.L_SHOULDER], lm[LM.L_HIP]);
+      const rightArmLift = angleBetween(lm[LM.R_WRIST], lm[LM.R_SHOULDER], lm[LM.R_HIP]);
+      if (Math.abs(leftArmLift - rightArmLift) > 25) {
+        markBad('Move both arms evenly.', 20);
+      }
+
+      const kneeGap = Math.abs(lm[LM.L_KNEE].x - lm[LM.R_KNEE].x);
+      const ankleGap = Math.abs(lm[LM.L_ANKLE].x - lm[LM.R_ANKLE].x);
+      if (ankleGap > 0.24 && kneeGap < ankleGap * 0.6) {
+        markBad("Don't let knees collapse inward.", 25);
+      }
+      break;
+    }
+
+    default:
+      break;
   }
 
-  // Bicep Curl check: Elbow swinging
-  if (workoutKey === 'bicep_curl') {
-    if (isVisible(lm, LM.L_ELBOW) && isVisible(lm, LM.L_SHOULDER)) {
-       const elbow = lm[LM.L_ELBOW];
-       const shoulder = lm[LM.L_SHOULDER];
-       const verticalPoint = { x: shoulder.x, y: shoulder.y + 1 };
-       const elbowSwingAngle = angleBetween(elbow, shoulder, verticalPoint);
-       
-       if (elbowSwingAngle > 25 && repPhase === 'UP' && primaryAngle < 150) {
-         isOk = false;
-         errorMsg = "Keep elbows tucked to your sides!";
-       }
-    }
-  }
-
-  return { isOk, errorMsg };
+  const isOk = score >= 70;
+  return { isOk, errorMsg: isOk ? null : (errorMsg || 'Adjust posture.'), score };
 }
 
 /* ──────────────────────────────────────────────
@@ -301,49 +654,54 @@ function getPrimaryAngle(lm) {
   switch (workoutKey) {
 
     case 'pushup':
-    case 'pullup': {
-      // Average both elbows; fall back to one side if other not visible
-      const la = allVisible(lm, [LM.L_SHOULDER, LM.L_ELBOW, LM.L_WRIST])
-        ? angleBetween(lm[LM.L_SHOULDER], lm[LM.L_ELBOW], lm[LM.L_WRIST]) : null;
-      const ra = allVisible(lm, [LM.R_SHOULDER, LM.R_ELBOW, LM.R_WRIST])
-        ? angleBetween(lm[LM.R_SHOULDER], lm[LM.R_ELBOW], lm[LM.R_WRIST]) : null;
-      if (la !== null && ra !== null) return (la + ra) / 2;
-      return la ?? ra ?? null;
-    }
-
+    case 'pullup':
     case 'bicep_curl':
     case 'shoulder_press': {
-      const la = allVisible(lm, [LM.L_SHOULDER, LM.L_ELBOW, LM.L_WRIST])
-        ? angleBetween(lm[LM.L_SHOULDER], lm[LM.L_ELBOW], lm[LM.L_WRIST]) : null;
-      const ra = allVisible(lm, [LM.R_SHOULDER, LM.R_ELBOW, LM.R_WRIST])
-        ? angleBetween(lm[LM.R_SHOULDER], lm[LM.R_ELBOW], lm[LM.R_WRIST]) : null;
-      if (la !== null && ra !== null) return (la + ra) / 2;
-      return la ?? ra ?? null;
+      const side = pickBestSide(lm, ['SHOULDER', 'ELBOW', 'WRIST'], 0.5);
+      if (!side) return null;
+      return angleBetween(
+        getSidePoint(lm, side, 'SHOULDER'),
+        getSidePoint(lm, side, 'ELBOW'),
+        getSidePoint(lm, side, 'WRIST')
+      );
     }
 
-    case 'squat':
+    case 'squat': {
+      const side = pickBestSide(lm, ['HIP', 'KNEE', 'ANKLE'], 0.5);
+      if (!side) return null;
+      return angleBetween(
+        getSidePoint(lm, side, 'HIP'),
+        getSidePoint(lm, side, 'KNEE'),
+        getSidePoint(lm, side, 'ANKLE')
+      );
+    }
+
     case 'lunge': {
-      const la = allVisible(lm, [LM.L_HIP, LM.L_KNEE, LM.L_ANKLE])
-        ? angleBetween(lm[LM.L_HIP], lm[LM.L_KNEE], lm[LM.L_ANKLE]) : null;
-      const ra = allVisible(lm, [LM.R_HIP, LM.R_KNEE, LM.R_ANKLE])
-        ? angleBetween(lm[LM.R_HIP], lm[LM.R_KNEE], lm[LM.R_ANKLE]) : null;
-      if (la !== null && ra !== null) return (la + ra) / 2;
-      return la ?? ra ?? null;
+      const frontSide = getLungeFrontSide(lm);
+      if (!frontSide) return null;
+      return angleBetween(
+        getSidePoint(lm, frontSide, 'HIP'),
+        getSidePoint(lm, frontSide, 'KNEE'),
+        getSidePoint(lm, frontSide, 'ANKLE')
+      );
     }
 
     case 'situp': {
-      const la = allVisible(lm, [LM.L_SHOULDER, LM.L_HIP, LM.L_KNEE])
-        ? angleBetween(lm[LM.L_SHOULDER], lm[LM.L_HIP], lm[LM.L_KNEE]) : null;
-      const ra = allVisible(lm, [LM.R_SHOULDER, LM.R_HIP, LM.R_KNEE])
-        ? angleBetween(lm[LM.R_SHOULDER], lm[LM.R_HIP], lm[LM.R_KNEE]) : null;
-      if (la !== null && ra !== null) return (la + ra) / 2;
-      return la ?? ra ?? null;
+      const side = pickBestSide(lm, ['SHOULDER', 'HIP', 'KNEE'], 0.5);
+      if (!side) return null;
+      return angleBetween(
+        getSidePoint(lm, side, 'SHOULDER'),
+        getSidePoint(lm, side, 'HIP'),
+        getSidePoint(lm, side, 'KNEE')
+      );
     }
 
     case 'jumping_jack': {
-      // Use arm spread angle at shoulder
-      if (!allVisible(lm, [LM.L_ELBOW, LM.L_SHOULDER, LM.R_SHOULDER])) return null;
-      return angleBetween(lm[LM.L_ELBOW], lm[LM.L_SHOULDER], lm[LM.R_SHOULDER]);
+      const needs = [LM.L_WRIST, LM.L_SHOULDER, LM.L_HIP, LM.R_WRIST, LM.R_SHOULDER, LM.R_HIP];
+      if (!allVisible(lm, needs, 0.5)) return null;
+      const left = angleBetween(lm[LM.L_WRIST], lm[LM.L_SHOULDER], lm[LM.L_HIP]);
+      const right = angleBetween(lm[LM.R_WRIST], lm[LM.R_SHOULDER], lm[LM.R_HIP]);
+      return (left + right) / 2;
     }
 
     default:
@@ -354,31 +712,63 @@ function getPrimaryAngle(lm) {
 /* ──────────────────────────────────────────────
    6. REP COUNTING LOGIC
 ────────────────────────────────────────────── */
-function processRep(rawAngle) {
+function processRep(rawAngle, formIsGood = true) {
   const angle = smoothAngle('primary', rawAngle);
+  if (!formIsGood) {
+    downFrameStreak = 0;
+    upFrameStreak = 0;
+    return { counted: false, angle };
+  }
+
   const now = Date.now();
-  const { down, up } = thresholds;
+  const { down, up } = activeThresholds;
+  const inverted = INVERTED_WORKOUTS.has(workoutKey);
 
-  // Determine "down" vs "up" direction based on workout type
-  // For pull-up, bicep_curl: down means LARGER angle; up means SMALLER
-  const invertedWorkouts = ['pullup', 'bicep_curl'];
-  const inverted = invertedWorkouts.includes(workoutKey);
+  const downEnter = inverted
+    ? angle >= (down + THRESHOLD_HYSTERESIS_DEG)
+    : angle <= (down - THRESHOLD_HYSTERESIS_DEG);
+  const upEnter = inverted
+    ? angle <= (up - THRESHOLD_HYSTERESIS_DEG)
+    : angle >= (up + THRESHOLD_HYSTERESIS_DEG);
 
-  const isDown = inverted ? (angle >= down) : (angle <= down);
-  const isUp = inverted ? (angle <= up) : (angle >= up);
+  if (repPhase === 'UP') {
+    upFrameStreak = 0;
+    downFrameStreak = downEnter ? (downFrameStreak + 1) : 0;
+    if (downFrameStreak >= PHASE_CONFIRM_FRAMES) {
+      repPhase = 'DOWN';
+      downEnteredAt = now;
+      repMinAngle = angle;
+      repMaxAngle = angle;
+      downFrameStreak = 0;
+    }
+    return { counted: false, angle };
+  }
 
-  if (repPhase === 'UP' && isDown) {
-    repPhase = 'DOWN';
-  } else if (repPhase === 'DOWN' && isUp) {
+  // Rep is in DOWN phase
+  repMinAngle = Math.min(repMinAngle, angle);
+  repMaxAngle = Math.max(repMaxAngle, angle);
+
+  downFrameStreak = 0;
+  upFrameStreak = upEnter ? (upFrameStreak + 1) : 0;
+  if (upFrameStreak >= PHASE_CONFIRM_FRAMES) {
     const elapsed = now - lastRepTime;
-    if (elapsed >= MIN_REP_DURATION_MS) {
+    const downHold = now - downEnteredAt;
+    const repRange = repMaxAngle - repMinAngle;
+    const enoughRange = repRange >= getMinRepRange();
+
+    repPhase = 'UP';
+    upFrameStreak = 0;
+    repMinAngle = Infinity;
+    repMaxAngle = -Infinity;
+
+    if (elapsed >= MIN_REP_DURATION_MS && downHold >= DOWN_HOLD_MIN_MS && enoughRange) {
       currentReps++;
       window.reps = currentReps;
       lastRepTime = now;
-      repPhase = 'UP';
       return { counted: true, angle };
     }
   }
+
   return { counted: false, angle };
 }
 
@@ -388,20 +778,19 @@ function processRep(rawAngle) {
 function getFeedback(angle, postureInfo) {
   if (!postureInfo.isOk) return { msg: postureInfo.errorMsg || 'Adjust Pose', cls: 'bad' };
 
-  const { down, up } = thresholds;
-  const invertedWorkouts = ['pullup', 'bicep_curl'];
-  const inverted = invertedWorkouts.includes(workoutKey);
+  const { down, up } = activeThresholds;
+  const inverted = INVERTED_WORKOUTS.has(workoutKey);
 
   if (repPhase === 'UP') {
     // Expect the user to go down
     const halfwayDown = inverted
       ? (angle >= (up + (down - up) * 0.45))
       : (angle <= (up - (up - down) * 0.45));
-    if (halfwayDown) return { msg: thresholds.downLabel, cls: 'warn' };
+    if (halfwayDown) return { msg: activeThresholds.downLabel, cls: 'warn' };
     return { msg: 'Good Form', cls: 'good' };
   } else {
     // User is in DOWN phase — expect them to push up
-    return { msg: thresholds.upLabel, cls: 'warn' };
+    return { msg: activeThresholds.upLabel, cls: 'warn' };
   }
 }
 
@@ -604,6 +993,11 @@ function onPoseResults(results) {
   const lm = results.poseLandmarks;
 
   if (!lm || lm.length === 0) {
+    goodFormStreak = 0;
+    lastPrimaryAngle = null;
+    lastPrimaryAngleTs = 0;
+    repPhase = 'UP';
+    resetRepTracking();
     ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
     showFrameAlert(true);
     setStatus('No Pose', 'red');
@@ -614,6 +1008,9 @@ function onPoseResults(results) {
   showFrameAlert(!poseVisible);
 
   if (!poseVisible) {
+    goodFormStreak = 0;
+    repPhase = 'UP';
+    resetRepTracking();
     drawSkeleton(lm, '#FF1744');
     setStatus('Stand in Frame', 'red');
     return;
@@ -629,33 +1026,37 @@ function onPoseResults(results) {
   // Get primary angle
   const rawAngle = getPrimaryAngle(lm);
   if (rawAngle === null) {
+    lastPrimaryAngle = null;
+    lastPrimaryAngleTs = 0;
+    resetRepTracking();
     drawSkeleton(lm, '#FFD600');
     setStatus('Adjust Pose', 'yellow');
     return;
   }
 
-  lastAngle = rawAngle;
+  updateThresholdCalibration(rawAngle);
+
+  const angleSpeedDps = getAngleSpeed(rawAngle);
 
   // Posture Analysis
-  const postureInfo = analyzePosture(lm, rawAngle);
+  const postureInfo = analyzePosture(lm, rawAngle, angleSpeedDps);
   const bodyOk = postureInfo.isOk;
+  if (bodyOk) {
+    goodFormStreak = Math.min(goodFormStreak + 1, MIN_GOOD_FORM_FRAMES + 4);
+  } else {
+    goodFormStreak = 0;
+  }
 
-  // Process rep
-  const { counted, angle } = processRep(rawAngle);
+  // Count reps only when posture is stable for a couple of frames
+  const repAllowed = bodyOk && goodFormStreak >= MIN_GOOD_FORM_FRAMES;
+  const { counted, angle } = processRep(rawAngle, repAllowed);
+  lastAngle = angle;
 
   if (counted) {
     updateRepUI(true);
     speakRep(currentReps);
     sendToFlutter(currentReps);
   }
-
-  // Pose quality
-  const { down, up } = thresholds;
-  const invertedWorkouts = ['pullup', 'bicep_curl'];
-  const inv = invertedWorkouts.includes(workoutKey);
-  const inGoodRange = inv
-    ? (angle <= up || angle >= down)
-    : (angle >= down && angle <= up + 20);
 
   lastPoseOk = bodyOk && poseVisible;
   lastPoseColor = lastPoseOk ? '#00E676' : '#FF1744';
@@ -665,9 +1066,13 @@ function onPoseResults(results) {
 
   // Status
   if (!bodyOk) {
-    setStatus('Align Body', 'red');
+    setStatus('Fix Form', 'red');
+  } else if (!calibrationState.done) {
+    setStatus('Learning Range', 'yellow');
+  } else if (!repAllowed) {
+    setStatus('Hold Form', 'yellow');
   } else if (repPhase === 'DOWN') {
-    setStatus('Going Down', 'yellow');
+    setStatus(activeThresholds.upLabel, 'yellow');
   } else {
     setStatus('Good Form', 'green');
   }
@@ -764,12 +1169,6 @@ function showApp() {
     loadScreen.style.display = 'none';
     app.classList.remove('hidden');
     app.classList.add('show');
-    
-    // Auto-show guide explicitly if it's the first time
-    if (!sessionStorage.getItem(`guide_${workoutKey}`)) {
-      setTimeout(toggleGuide, 400); // Wait for app reveal
-      sessionStorage.setItem(`guide_${workoutKey}`, 'true');
-    }
   }, 500);
 }
 
@@ -804,6 +1203,84 @@ function toggleGuide() {
   }
   
   overlay.classList.remove('hidden');
+}
+
+function loadCoachVideo(videoEl, fallbackEl, sourcePath, fallbackLabel) {
+  if (!videoEl || !fallbackEl) return;
+
+  if (!sourcePath) {
+    videoEl.classList.add('hidden');
+    fallbackEl.classList.remove('hidden');
+    fallbackEl.textContent = `${fallbackLabel} video is not configured.`;
+    return;
+  }
+
+  fallbackEl.textContent = `Missing file: ${sourcePath}`;
+  videoEl.classList.remove('hidden');
+  fallbackEl.classList.add('hidden');
+
+  videoEl.onloadeddata = () => {
+    videoEl.classList.remove('hidden');
+    fallbackEl.classList.add('hidden');
+    const playPromise = videoEl.play();
+    if (playPromise && typeof playPromise.catch === 'function') {
+      playPromise.catch(() => { });
+    }
+  };
+
+  videoEl.onerror = () => {
+    videoEl.classList.add('hidden');
+    fallbackEl.classList.remove('hidden');
+  };
+
+  videoEl.src = sourcePath;
+  videoEl.load();
+}
+
+function pauseCoachVideos() {
+  [coachGoodVideoEl, coachBadVideoEl].forEach((video) => {
+    if (!video) return;
+    video.pause();
+  });
+}
+
+function openCoachPreview() {
+  if (!coachPreviewEl) return;
+
+  const videoMeta = WorkoutVideoMeta[workoutKey] || {};
+  coachPreviewTitleEl.textContent = `${meta.name} Form Guide`;
+
+  loadCoachVideo(coachGoodVideoEl, coachGoodFallbackEl, videoMeta.good, 'Good-form');
+  loadCoachVideo(coachBadVideoEl, coachBadFallbackEl, videoMeta.bad, 'Bad-form');
+
+  coachPreviewEl.classList.remove('hidden');
+}
+
+function closeCoachPreview() {
+  if (!coachPreviewEl) return;
+  pauseCoachVideos();
+  coachPreviewEl.classList.add('hidden');
+}
+
+function startWorkoutEngine() {
+  if (workoutEngineStarted) return;
+  workoutEngineStarted = true;
+
+  const pose = initPose();
+  initCamera(pose);
+  sessionStartTime = Date.now();
+  setStatus('Ready', 'green');
+  showFeedbackToast('Get into position!', 'good');
+}
+
+function skipCoachPreview() {
+  closeCoachPreview();
+  startWorkoutEngine();
+}
+
+function startCoachWorkout() {
+  closeCoachPreview();
+  startWorkoutEngine();
 }
 
 /* ──────────────────────────────────────────────
@@ -843,12 +1320,10 @@ window.addEventListener('DOMContentLoaded', () => {
   showFeedbackToast('Initializing…', '');
 
   runLoadingSequence(() => {
-    const pose = initPose();
-    initCamera(pose);
     showApp();
-    setStatus('Ready', 'green');
-    showFeedbackToast('Get into position!', 'good');
-    sessionStartTime = Date.now();
+    setStatus('Watch Demo', 'yellow');
+    showFeedbackToast('Watch form preview, then start.', 'warn');
+    openCoachPreview();
   });
 });
 
@@ -874,6 +1349,14 @@ document.addEventListener('visibilitychange', () => {
 let sessionStartTime = 0;
 
 function finishWorkout() {
+  if (!workoutEngineStarted) {
+    closeCoachPreview();
+    window.location.hash = '';
+    window.location.search = '';
+    window.location.reload();
+    return;
+  }
+
   if (synth) synth.cancel();
   
   const payload = {
@@ -889,6 +1372,7 @@ function finishWorkout() {
   if (poseInstance) {
     poseInstance.close();
   }
+  workoutEngineStarted = false;
   
   // Sync to Backend / WebView Controller
   if (window.flutter_inappwebview) {

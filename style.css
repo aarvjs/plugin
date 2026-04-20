@@ -621,6 +621,155 @@ body {
   color: #000;
 }
 
+/* ════════════════════════════════════════════
+   COACH PREVIEW OVERLAY
+════════════════════════════════════════════ */
+#coach-preview {
+  position: absolute;
+  inset: 0;
+  z-index: 2300;
+  background:
+    radial-gradient(circle at 20% 15%, rgba(0, 230, 118, 0.18), transparent 45%),
+    radial-gradient(circle at 80% 85%, rgba(255, 23, 68, 0.18), transparent 50%),
+    rgba(4, 4, 8, 0.92);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+}
+
+.coach-preview-card {
+  width: min(980px, 100%);
+  max-height: 92vh;
+  overflow: auto;
+  border-radius: 24px;
+  border: 1px solid var(--border);
+  background: rgba(10, 10, 15, 0.95);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+  padding: 22px;
+}
+
+.coach-preview-header {
+  margin-bottom: 16px;
+}
+
+.coach-kicker {
+  font-size: 11px;
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--green);
+  margin-bottom: 6px;
+}
+
+#coach-preview-title {
+  font-family: var(--font-display);
+  font-size: clamp(24px, 6vw, 38px);
+  letter-spacing: 0.5px;
+  line-height: 1.05;
+}
+
+.coach-sub {
+  margin-top: 6px;
+  color: var(--text-mid);
+  font-size: 14px;
+}
+
+.coach-video-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.coach-video-card {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 12px;
+}
+
+.coach-video-card.good {
+  border-color: rgba(0, 230, 118, 0.35);
+}
+
+.coach-video-card.bad {
+  border-color: rgba(255, 23, 68, 0.35);
+}
+
+.coach-video-label {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 8px;
+}
+
+.coach-video-card.good .coach-video-label {
+  color: var(--green);
+}
+
+.coach-video-card.bad .coach-video-label {
+  color: var(--red);
+}
+
+.coach-video {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: 12px;
+  background: #000;
+}
+
+.coach-video-fallback {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 12px;
+  border: 1px dashed rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.4);
+  color: var(--text-mid);
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 14px;
+}
+
+.coach-preview-actions {
+  margin-top: 16px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.coach-btn {
+  border: none;
+  border-radius: 12px;
+  padding: 12px 16px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.15s ease, opacity 0.2s ease, background 0.2s ease;
+}
+
+.coach-btn:active {
+  transform: scale(0.97);
+}
+
+.coach-btn.ghost {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-hi);
+  border: 1px solid var(--border);
+}
+
+.coach-btn.primary {
+  background: var(--green);
+  color: #00170b;
+}
+
 .guide-start-btn {
   width: 100%;
   padding: 16px;
@@ -783,6 +932,27 @@ body {
 
   #top-reps {
     font-size: 20px;
+  }
+}
+
+@media (max-width: 760px) {
+  .coach-preview-card {
+    max-height: 95vh;
+    border-radius: 18px;
+    padding: 16px;
+  }
+
+  .coach-video-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .coach-preview-actions {
+    justify-content: stretch;
+  }
+
+  .coach-btn {
+    flex: 1;
   }
 }
 

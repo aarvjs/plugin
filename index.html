@@ -180,6 +180,36 @@
       </div>
     </div>
 
+    <!-- PRE-WORKOUT COACH PREVIEW -->
+    <div id="coach-preview" class="hidden">
+      <div class="coach-preview-card">
+        <div class="coach-preview-header">
+          <p class="coach-kicker">Form Preview</p>
+          <h2 id="coach-preview-title">Push-Up Form Guide</h2>
+          <p class="coach-sub">Watch correct and incorrect form before starting.</p>
+        </div>
+
+        <div class="coach-video-grid">
+          <div class="coach-video-card good">
+            <div class="coach-video-label">Do This</div>
+            <video id="coach-good-video" class="coach-video" playsinline muted loop controls preload="metadata"></video>
+            <div id="coach-good-fallback" class="coach-video-fallback hidden">Good-form demo video missing.</div>
+          </div>
+
+          <div class="coach-video-card bad">
+            <div class="coach-video-label">Avoid This</div>
+            <video id="coach-bad-video" class="coach-video" playsinline muted loop controls preload="metadata"></video>
+            <div id="coach-bad-fallback" class="coach-video-fallback hidden">Bad-form demo video missing.</div>
+          </div>
+        </div>
+
+        <div class="coach-preview-actions">
+          <button class="coach-btn ghost" onclick="skipCoachPreview()">Skip</button>
+          <button class="coach-btn primary" onclick="startCoachWorkout()">Start Workout</button>
+        </div>
+      </div>
+    </div>
+
     <!-- END WORKOUT -->
     <div id="end-action-wrap">
       <button class="end-workout-btn" onclick="finishWorkout()">End Session</button>
