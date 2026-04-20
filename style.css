@@ -156,6 +156,75 @@ body {
 }
 
 /* ════════════════════════════════════════════
+   HOME SCREEN
+════════════════════════════════════════════ */
+#home-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 60px 20px;
+  overflow-y: auto;
+}
+
+#home-screen .logo-mark {
+  margin-bottom: 20px;
+}
+
+#home-screen .home-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 40px;
+  gap: 8px;
+}
+
+.workout-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  width: 100%;
+  max-width: 400px;
+}
+
+.workout-card {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  cursor: pointer;
+  transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+}
+
+.workout-card:active {
+  transform: scale(0.95);
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.workout-icon {
+  font-size: 38px;
+  line-height: 1;
+}
+
+.workout-name {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text-hi);
+  text-align: center;
+  letter-spacing: 0.3px;
+}
+
+/* ════════════════════════════════════════════
    APP SHELL
 ════════════════════════════════════════════ */
 #app {
@@ -274,26 +343,20 @@ body {
   flex: 1;
   overflow: hidden;
   background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-#input-video {
+#input-video, #pose-canvas {
   position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  transform: scaleX(-1);
-  /* mirror */
-}
-
-#pose-canvas {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  transform: scaleX(-1);
-  /* mirror to match video */
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) scaleX(-1);
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
 }
 
 /* ── FRAME ALERT ── */
@@ -360,6 +423,14 @@ body {
 .feedback-toast.bad {
   border-color: var(--red);
   color: var(--red);
+  animation: shakeAlert 0.4s cubic-bezier(.36,.07,.19,.97) both;
+}
+
+@keyframes shakeAlert {
+  10%, 90% { transform: translateX(calc(-50% - 2px)); }
+  20%, 80% { transform: translateX(calc(-50% + 4px)); }
+  30%, 50%, 70% { transform: translateX(calc(-50% - 8px)); }
+  40%, 60% { transform: translateX(calc(-50% + 8px)); }
 }
 
 /* ════════════════════════════════════════════

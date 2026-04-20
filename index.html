@@ -18,6 +18,59 @@
 
 <body>
 
+  <!-- ══════════════════ HOME SCREEN ══════════════════ -->
+  <div id="home-screen" class="hidden">
+    <div class="home-header">
+      <div class="logo-mark">
+        <svg viewBox="0 0 60 60" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="30" cy="12" r="6" fill="currentColor" />
+          <line x1="30" y1="18" x2="30" y2="36" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" />
+          <line x1="30" y1="28" x2="14" y2="22" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" />
+          <line x1="30" y1="28" x2="46" y2="22" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" />
+          <line x1="30" y1="36" x2="20" y2="52" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" />
+          <line x1="30" y1="36" x2="40" y2="52" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" />
+        </svg>
+      </div>
+      <h1 class="loading-title">Fitlix <span>AI</span></h1>
+      <p class="loading-sub">Select your workout</p>
+    </div>
+    
+    <div class="workout-grid">
+      <div class="workout-card" onclick="selectWorkout('pushup')">
+        <span class="workout-icon">💪</span>
+        <span class="workout-name">Push-Up</span>
+      </div>
+      <div class="workout-card" onclick="selectWorkout('squat')">
+        <span class="workout-icon">🏋️</span>
+        <span class="workout-name">Squat</span>
+      </div>
+      <div class="workout-card" onclick="selectWorkout('pullup')">
+        <span class="workout-icon">🦾</span>
+        <span class="workout-name">Pull-Up</span>
+      </div>
+      <div class="workout-card" onclick="selectWorkout('lunge')">
+        <span class="workout-icon">🦵</span>
+        <span class="workout-name">Lunge</span>
+      </div>
+      <div class="workout-card" onclick="selectWorkout('situp')">
+        <span class="workout-icon">🔥</span>
+        <span class="workout-name">Sit-Up</span>
+      </div>
+      <div class="workout-card" onclick="selectWorkout('bicep_curl')">
+        <span class="workout-icon">💪</span>
+        <span class="workout-name">Bicep Curl</span>
+      </div>
+      <div class="workout-card" onclick="selectWorkout('shoulder_press')">
+        <span class="workout-icon">🏋️</span>
+        <span class="workout-name">Shoulder Press</span>
+      </div>
+      <div class="workout-card" onclick="selectWorkout('jumping_jack')">
+        <span class="workout-icon">⚡</span>
+        <span class="workout-name">Jumping Jacks</span>
+      </div>
+    </div>
+  </div>
+
   <!-- ══════════════════ LOADING SCREEN ══════════════════ -->
   <div id="loading-screen">
     <div class="loading-inner">

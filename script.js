@@ -26,8 +26,8 @@ const WorkoutMeta = {
 
 // Workout-specific thresholds: [downAngle, upAngle]
 const WorkoutThresholds = {
-  pushup: { down: 90, up: 160, downLabel: 'Go Lower', upLabel: 'Push Up' },
-  squat: { down: 90, up: 160, downLabel: 'Go Deeper', upLabel: 'Stand Up' },
+  pushup: { down: 90, up: 145, downLabel: 'Go Lower', upLabel: 'Push Up' },
+  squat: { down: 100, up: 145, downLabel: 'Go Deeper', upLabel: 'Stand Up' },
   pullup: { down: 160, up: 60, downLabel: 'Go Lower', upLabel: 'Pull Up' },
   lunge: { down: 90, up: 160, downLabel: 'Go Deeper', upLabel: 'Stand Up' },
   situp: { down: 60, up: 120, downLabel: 'Go Down', upLabel: 'Sit Up' },
@@ -58,10 +58,17 @@ const LM = {
 /* ──────────────────────────────────────────────
    1. URL PARAMS & WORKOUT SETUP
 ────────────────────────────────────────────── */
+const hashMatch = window.location.hash.replace('#', '');
 const urlParams = new URLSearchParams(window.location.search);
-const workoutKey = (urlParams.get('workout') || 'pushup').toLowerCase().replace('-', '_');
+const rawWorkout = hashMatch || urlParams.get('workout') || null;
+const workoutKey = (rawWorkout || 'pushup').toLowerCase().replace('-', '_');
 const meta = WorkoutMeta[workoutKey] || WorkoutMeta.pushup;
 const thresholds = WorkoutThresholds[workoutKey] || WorkoutThresholds.pushup;
+
+function selectWorkout(key) {
+  window.location.hash = key;
+  window.location.reload();
+}
 
 document.getElementById('workout-name').textContent = meta.name;
 document.getElementById('workout-icon').textContent = meta.icon;
@@ -136,9 +143,43 @@ function isBodyStraight(lm) {
   for (const [s, h, a] of sides) {
     if (!allVisible(lm, [s, h, a], 0.5)) continue;
     const angle = angleBetween(lm[s], lm[h], lm[a]);
-    if (angle < 155) return false; // hip bent too much
+    if (angle < 135) return false; // hip bent too much
   }
   return true;
+}
+
+/* ──────────────────────────────────────────────
+   4.5 POSTURE ANALYSIS HELPERS
+────────────────────────────────────────────── */
+function analyzePosture(lm, primaryAngle) {
+  let isOk = true;
+  let errorMsg = null;
+
+  // Horizontal Body Alignment Check
+  if (['pushup', 'pullup', 'plank'].includes(workoutKey)) {
+    if (!isBodyStraight(lm)) {
+      isOk = false;
+      errorMsg = 'Keep Back Straight!';
+    }
+  }
+
+  // Squat specific checks: Knee tracking over ankle
+  if (workoutKey === 'squat' && isVisible(lm, LM.L_KNEE) && isVisible(lm, LM.L_ANKLE)) {
+     if (repPhase === 'UP' && primaryAngle > 110 && primaryAngle < 150) {
+       // if they are halfway down, encourage them to go all the way
+       // We rely on getFeedback for soft warnings, so we only trigger errors for form breaks
+       // Currently, let's keep squat form breaks to basic body constraints if needed
+     }
+  }
+
+  // Lunge check
+  if (workoutKey === 'lunge') {
+    if (repPhase === 'UP' && primaryAngle > 110 && primaryAngle < 150) {
+       // Just structural stub for specific lunge form breaks
+    }
+  }
+
+  return { isOk, errorMsg };
 }
 
 /* ──────────────────────────────────────────────
@@ -232,8 +273,8 @@ function processRep(rawAngle) {
 /* ──────────────────────────────────────────────
    7. FEEDBACK LOGIC
 ────────────────────────────────────────────── */
-function getFeedback(angle, poseOk) {
-  if (!poseOk) return { msg: 'Straighten Body', cls: 'bad' };
+function getFeedback(angle, postureInfo) {
+  if (!postureInfo.isOk) return { msg: postureInfo.errorMsg || 'Adjust Pose', cls: 'bad' };
 
   const { down, up } = thresholds;
   const invertedWorkouts = ['pullup', 'bicep_curl'];
@@ -258,17 +299,23 @@ function getFeedback(angle, poseOk) {
 const synth = window.speechSynthesis;
 let isSpeaking = false;
 
-function speakRep(count) {
-  if (!synth || isSpeaking) return;
-  // Avoid speaking during movement; don't queue
-  const utterance = new SpeechSynthesisUtterance(String(count));
+function speakMsg(text, isUrgent = false) {
+  if (!synth) return;
+  if (isSpeaking && !isUrgent) return; // If urgent, override
+  
+  const utterance = new SpeechSynthesisUtterance(text);
   utterance.rate = 1.1;
   utterance.pitch = 1.0;
   utterance.volume = 1.0;
   utterance.onstart = () => { isSpeaking = true; };
   utterance.onend = () => { isSpeaking = false; };
-  synth.cancel();
+  
+  if (isUrgent) synth.cancel(); // Cancel current to shout the rep or critical error
   synth.speak(utterance);
+}
+
+function speakRep(count) {
+  speakMsg(String(count), true);
 }
 
 /* ──────────────────────────────────────────────
@@ -434,11 +481,12 @@ let lastPoseColor = '#00E676';
 function onPoseResults(results) {
   frameCount++;
 
-  // Sync canvas to camera wrap size
-  const wrap = document.getElementById('camera-wrap');
-  if (canvasEl.width !== wrap.clientWidth || canvasEl.height !== wrap.clientHeight) {
-    canvasEl.width = wrap.clientWidth;
-    canvasEl.height = wrap.clientHeight;
+  // Sync canvas accurately to the true video resolution to avoid alignment drifting
+  if (videoEl.videoWidth && videoEl.videoHeight) {
+    if (canvasEl.width !== videoEl.videoWidth || canvasEl.height !== videoEl.videoHeight) {
+      canvasEl.width = videoEl.videoWidth;
+      canvasEl.height = videoEl.videoHeight;
+    }
   }
 
   const lm = results.poseLandmarks;
@@ -476,9 +524,9 @@ function onPoseResults(results) {
 
   lastAngle = rawAngle;
 
-  // Check body alignment (pushups, planks)
-  const needsBodyCheck = ['pushup', 'pullup'].includes(workoutKey);
-  const bodyOk = needsBodyCheck ? isBodyStraight(lm) : true;
+  // Posture Analysis
+  const postureInfo = analyzePosture(lm, rawAngle);
+  const bodyOk = postureInfo.isOk;
 
   // Process rep
   const { counted, angle } = processRep(rawAngle);
@@ -515,8 +563,11 @@ function onPoseResults(results) {
   // Feedback toast throttle
   const now = Date.now();
   if (now - lastFeedbackTime > FEEDBACK_THROTTLE_MS) {
-    const fb = getFeedback(angle, bodyOk);
+    const fb = getFeedback(angle, postureInfo);
     showFeedbackToast(fb.msg, fb.cls);
+    if (fb.cls === 'bad' || fb.cls === 'warn') {
+       speakMsg(fb.msg, false); // Speak the form correction naturally
+    }
     lastFeedbackTime = now;
   }
 }
@@ -551,8 +602,8 @@ function initCamera(pose) {
     onFrame: async () => {
       await pose.send({ image: videoEl });
     },
-    width: 720,
-    height: 1280,
+    width: 1280,
+    height: 720,
     facingMode: 'user',
   });
   camera.start();
@@ -611,7 +662,13 @@ function handleBack() {
       history.back();
     }
   } catch (_) {
-    history.back();
+    if (rawWorkout) {
+        window.location.hash = '';
+        window.location.search = '';
+        window.location.reload();
+    } else {
+        history.back();
+    }
   }
 }
 
@@ -619,6 +676,12 @@ function handleBack() {
    18. ENTRY POINT
 ────────────────────────────────────────────── */
 window.addEventListener('DOMContentLoaded', () => {
+  if (!rawWorkout) {
+    document.getElementById('loading-screen').classList.add('hidden');
+    document.getElementById('home-screen').classList.remove('hidden');
+    return; // Wait for user to select from home screen
+  }
+
   // Initial UI state
   updateRepUI();
   setStatus('Loading…', 'yellow');
@@ -637,9 +700,10 @@ window.addEventListener('DOMContentLoaded', () => {
    19. RESIZE HANDLER — canvas stays in sync
 ────────────────────────────────────────────── */
 window.addEventListener('resize', () => {
-  const wrap = document.getElementById('camera-wrap');
-  canvasEl.width = wrap.clientWidth;
-  canvasEl.height = wrap.clientHeight;
+  if (videoEl.videoWidth && videoEl.videoHeight) {
+    canvasEl.width = videoEl.videoWidth;
+    canvasEl.height = videoEl.videoHeight;
+  }
 });
 
 /* ──────────────────────────────────────────────
