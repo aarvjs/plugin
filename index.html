@@ -7,6 +7,7 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <title>Fitlix AI Trainer</title>
+  <link rel="manifest" href="manifest.json" />
   <link rel="stylesheet" href="style.css" />
 
   <!-- MediaPipe Pose via CDN -->
@@ -179,9 +180,25 @@
       </div>
     </div>
 
+    <!-- END WORKOUT -->
+    <div id="end-action-wrap">
+      <button class="end-workout-btn" onclick="finishWorkout()">End Session</button>
+    </div>
+
   </div>
 
   <script src="script.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js').then((reg) => {
+          console.log('ServiceWorker registration successful');
+        }).catch((err) => {
+          console.error('ServiceWorker registration failed: ', err);
+        });
+      });
+    }
+  </script>
 </body>
 
 </html>

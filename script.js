@@ -687,6 +687,7 @@ function onPoseResults(results) {
 /* ──────────────────────────────────────────────
    14. MEDIAPIPE POSE INITIALIZATION
 ────────────────────────────────────────────── */
+let poseInstance = null;
 function initPose() {
   const pose = new Pose({
     locateFile: (file) =>
@@ -703,21 +704,24 @@ function initPose() {
   });
 
   pose.onResults(onPoseResults);
+  poseInstance = pose;
   return pose;
 }
 
 /* ──────────────────────────────────────────────
    15. CAMERA INITIALIZATION
 ────────────────────────────────────────────── */
+let cameraInstance = null;
 function initCamera(pose) {
   const camera = new Camera(videoEl, {
     onFrame: async () => {
       await pose.send({ image: videoEl });
     },
-    width: 1280,
-    height: 720,
+    width: 640,  // Lowered resolution guarantees 30+FPS on old phones
+    height: 480,
     facingMode: 'user',
   });
+  cameraInstance = camera;
   camera.start();
 }
 
@@ -844,6 +848,7 @@ window.addEventListener('DOMContentLoaded', () => {
     showApp();
     setStatus('Ready', 'green');
     showFeedbackToast('Get into position!', 'good');
+    sessionStartTime = Date.now();
   });
 });
 
@@ -858,10 +863,52 @@ window.addEventListener('resize', () => {
 });
 
 /* ──────────────────────────────────────────────
-   20. VISIBILITY API — pause/resume on tab hide
+   20. VISIBILITY & CLEANUP HANDLERS
 ────────────────────────────────────────────── */
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
     synth && synth.cancel();
   }
 });
+
+let sessionStartTime = 0;
+
+function finishWorkout() {
+  if (synth) synth.cancel();
+  
+  const payload = {
+    workout: workoutKey,
+    reps: currentReps,
+    duration_sec: Math.round((Date.now() - sessionStartTime) / 1000)
+  };
+  
+  // Crucial: Stop camera to prevent background battery drain
+  if (cameraInstance) {
+    cameraInstance.stop();
+  }
+  if (poseInstance) {
+    poseInstance.close();
+  }
+  
+  // Sync to Backend / WebView Controller
+  if (window.flutter_inappwebview) {
+    try {
+      window.flutter_inappwebview.callHandler('onWorkoutEnded', payload);
+    } catch(e) {}
+  } else {
+    // Pure Web Fallback
+    console.log("Syncing payload to backend:", JSON.stringify(payload));
+    alert("Workout Saved!\nReps: " + payload.reps + "\nTime: " + payload.duration_sec + "s\nCheck console for JSON payload.");
+    
+    // Send standard fetch to API (e.g. your Node.js or Go server)
+    /*
+    fetch('/api/sync-workout', {
+       method: 'POST', body: JSON.stringify(payload)
+    });
+    */
+    
+    window.location.hash = '';
+    window.location.search = '';
+    window.location.reload();
+  }
+}
