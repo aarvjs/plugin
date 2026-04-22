@@ -7,7 +7,7 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <title>Fitlix AI Trainer</title>
-  <link rel="manifest" href="manifest.json" />
+
   <link rel="stylesheet" href="style.css" />
 
   <!-- MediaPipe Pose via CDN -->
@@ -21,6 +21,7 @@
 
   <!-- ══════════════════ HOME SCREEN ══════════════════ -->
   <div id="home-screen" class="hidden">
+    <div class="home-bg-glow"></div>
     <div class="home-header">
       <div class="logo-mark">
         <svg viewBox="0 0 60 60" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -33,41 +34,49 @@
         </svg>
       </div>
       <h1 class="loading-title">Fitlix <span>AI</span></h1>
-      <p class="loading-sub">Select your workout</p>
+      <p class="home-tagline">Select your workout to begin</p>
     </div>
-    
+
     <div class="workout-grid">
-      <div class="workout-card" onclick="selectWorkout('pushup')">
+      <div class="workout-card" onclick="selectWorkout('pushup')" style="--card-accent: #00E676">
         <span class="workout-icon">💪</span>
         <span class="workout-name">Push-Up</span>
+        <span class="workout-tag">Chest · Triceps</span>
       </div>
-      <div class="workout-card" onclick="selectWorkout('squat')">
+      <div class="workout-card" onclick="selectWorkout('squat')" style="--card-accent: #40C4FF">
         <span class="workout-icon">🏋️</span>
         <span class="workout-name">Squat</span>
+        <span class="workout-tag">Quads · Glutes</span>
       </div>
-      <div class="workout-card" onclick="selectWorkout('pullup')">
+      <div class="workout-card" onclick="selectWorkout('pullup')" style="--card-accent: #FF6E40">
         <span class="workout-icon">🦾</span>
         <span class="workout-name">Pull-Up</span>
+        <span class="workout-tag">Back · Biceps</span>
       </div>
-      <div class="workout-card" onclick="selectWorkout('lunge')">
+      <div class="workout-card" onclick="selectWorkout('lunge')" style="--card-accent: #E040FB">
         <span class="workout-icon">🦵</span>
         <span class="workout-name">Lunge</span>
+        <span class="workout-tag">Legs · Balance</span>
       </div>
-      <div class="workout-card" onclick="selectWorkout('situp')">
+      <div class="workout-card" onclick="selectWorkout('situp')" style="--card-accent: #FFD740">
         <span class="workout-icon">🔥</span>
         <span class="workout-name">Sit-Up</span>
+        <span class="workout-tag">Core · Abs</span>
       </div>
-      <div class="workout-card" onclick="selectWorkout('bicep_curl')">
+      <div class="workout-card" onclick="selectWorkout('bicep_curl')" style="--card-accent: #69F0AE">
         <span class="workout-icon">💪</span>
         <span class="workout-name">Bicep Curl</span>
+        <span class="workout-tag">Arms · Biceps</span>
       </div>
-      <div class="workout-card" onclick="selectWorkout('shoulder_press')">
+      <div class="workout-card" onclick="selectWorkout('shoulder_press')" style="--card-accent: #FF4081">
         <span class="workout-icon">🏋️</span>
         <span class="workout-name">Shoulder Press</span>
+        <span class="workout-tag">Shoulders · Triceps</span>
       </div>
-      <div class="workout-card" onclick="selectWorkout('jumping_jack')">
+      <div class="workout-card" onclick="selectWorkout('jumping_jack')" style="--card-accent: #64FFDA">
         <span class="workout-icon">⚡</span>
         <span class="workout-name">Jumping Jacks</span>
+        <span class="workout-tag">Cardio · Full Body</span>
       </div>
     </div>
   </div>
@@ -86,7 +95,7 @@
         </svg>
       </div>
       <h1 class="loading-title">Fitlix <span>AI</span> Trainer</h1>
-      <p class="loading-sub">Opening Fitlix AI Trainer...</p>
+      <p class="loading-sub" id="loading-status-text">Initializing AI engine...</p>
       <div class="loader-track">
         <div class="loader-bar" id="loader-bar"></div>
       </div>
@@ -109,8 +118,9 @@
         <span id="workout-name">Workout</span>
       </div>
       <div class="top-actions">
-        <button id="guide-btn" onclick="toggleGuide()" aria-label="How to do it">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <button id="guide-btn" onclick="toggleGuide()" aria-label="Form guide">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+            stroke-linejoin="round">
             <circle cx="12" cy="12" r="10"></circle>
             <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
             <line x1="12" y1="17" x2="12.01" y2="17"></line>
@@ -131,6 +141,11 @@
       <!-- Overlay messages -->
       <div id="frame-alert" class="frame-alert hidden">
         <span>📐 Stand in frame</span>
+      </div>
+
+      <!-- Wrong position warning -->
+      <div id="position-alert" class="position-alert hidden">
+        <span id="position-alert-text">Wrong position for this exercise</span>
       </div>
 
       <div id="feedback-toast" class="feedback-toast hidden"></div>
@@ -159,7 +174,8 @@
     <div id="guide-overlay" class="hidden">
       <div class="guide-card">
         <button class="close-guide" onclick="toggleGuide()">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
+            stroke-linejoin="round">
             <line x1="18" y1="6" x2="6" y2="18"></line>
             <line x1="6" y1="6" x2="18" y2="18"></line>
           </svg>
@@ -186,49 +202,99 @@
         <div class="coach-preview-header">
           <p class="coach-kicker">Form Preview</p>
           <h2 id="coach-preview-title">Push-Up Form Guide</h2>
-          <p class="coach-sub">Watch correct and incorrect form before starting.</p>
+          <p class="coach-sub">Watch proper form first, then check common mistakes before starting.</p>
+          <p id="coach-source" class="coach-source hidden"></p>
         </div>
 
         <div class="coach-video-grid">
-          <div class="coach-video-card good">
-            <div class="coach-video-label">Do This</div>
-            <video id="coach-good-video" class="coach-video" playsinline muted loop controls preload="metadata"></video>
-            <div id="coach-good-fallback" class="coach-video-fallback hidden">Good-form demo video missing.</div>
+          <!-- GOOD FORM SLOT -->
+          <div class="coach-video-card good" style="position: relative;">
+            <div class="coach-video-label">
+              <svg viewBox="0 0 16 16" fill="none" width="12" height="12">
+                <circle cx="8" cy="8" r="7" stroke="currentColor" stroke-width="1.5" />
+                <polyline points="5,8 7,10 11,6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
+                  stroke-linejoin="round" />
+              </svg>
+              Do This
+            </div>
+            <div id="coach-good-loading" class="coach-loading hidden">Loading exercise demo...</div>
+            <video id="coach-good-video" class="coach-video hidden" playsinline muted loop
+              controls preload="metadata"></video>
+            <img id="coach-good-gif" class="coach-gif hidden" alt="Good form demonstration" />
+            <canvas id="coach-pose-canvas" class="coach-pose-canvas"></canvas>
+            <div id="coach-good-fallback" class="coach-video-fallback hidden">
+              <div>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="32" height="32"
+                  style="opacity:0.4; margin-bottom:8px">
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="12" y1="8" x2="12" y2="12" />
+                  <line x1="12" y1="16" x2="12.01" y2="16" />
+                </svg>
+                <p>Demo video unavailable</p>
+              </div>
+            </div>
           </div>
 
+          <!-- BAD FORM SLOT -->
           <div class="coach-video-card bad">
-            <div class="coach-video-label">Avoid This</div>
-            <video id="coach-bad-video" class="coach-video" playsinline muted loop controls preload="metadata"></video>
-            <div id="coach-bad-fallback" class="coach-video-fallback hidden">Bad-form demo video missing.</div>
+            <div class="coach-video-label">
+              <svg viewBox="0 0 16 16" fill="none" width="12" height="12">
+                <circle cx="8" cy="8" r="7" stroke="currentColor" stroke-width="1.5" />
+                <line x1="5.5" y1="5.5" x2="10.5" y2="10.5" stroke="currentColor" stroke-width="1.5"
+                  stroke-linecap="round" />
+                <line x1="10.5" y1="5.5" x2="5.5" y2="10.5" stroke="currentColor" stroke-width="1.5"
+                  stroke-linecap="round" />
+              </svg>
+              Avoid This
+            </div>
+            <div id="coach-bad-loading" class="coach-loading hidden">Loading...</div>
+            <video id="coach-bad-video" class="coach-video hidden" playsinline muted loop
+              controls preload="metadata"></video>
+            <img id="coach-bad-gif" class="coach-gif hidden" alt="Bad form demonstration" />
+            <div id="coach-bad-fallback" class="coach-video-fallback mistakes-fallback">
+              <div class="mistakes-inner">
+                <p class="mistakes-title">Common Mistakes</p>
+                <ul id="coach-bad-mistakes" class="coach-mistake-list">
+                  <li>Keep control through full range.</li>
+                </ul>
+              </div>
+            </div>
           </div>
         </div>
 
         <div class="coach-preview-actions">
-          <button class="coach-btn ghost" onclick="skipCoachPreview()">Skip</button>
-          <button class="coach-btn primary" onclick="startCoachWorkout()">Start Workout</button>
+          <button class="coach-btn ghost" onclick="skipCoachPreview()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+              <line x1="5" y1="12" x2="19" y2="12" />
+              <polyline points="12 5 19 12 12 19" />
+            </svg>
+            Skip Preview
+          </button>
+          <button class="coach-btn primary" onclick="startCoachWorkout()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+              <polygon points="5 3 19 12 5 21 5 3" fill="currentColor" />
+            </svg>
+            Start Workout
+          </button>
         </div>
       </div>
     </div>
 
     <!-- END WORKOUT -->
     <div id="end-action-wrap">
-      <button class="end-workout-btn" onclick="finishWorkout()">End Session</button>
+      <button class="end-workout-btn" onclick="finishWorkout()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"
+          style="margin-right:6px">
+          <rect x="3" y="3" width="18" height="18" rx="3" />
+        </svg>
+        End Session
+      </button>
     </div>
 
   </div>
 
   <script src="script.js"></script>
-  <script>
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('sw.js').then((reg) => {
-          console.log('ServiceWorker registration successful');
-        }).catch((err) => {
-          console.error('ServiceWorker registration failed: ', err);
-        });
-      });
-    }
-  </script>
+
 </body>
 
 </html>

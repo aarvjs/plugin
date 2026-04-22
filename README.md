@@ -1,109 +1,209 @@
-<div align="center">
-  <img src="https://upload.wikimedia.org/wikipedia/commons/e/e4/MediaPipe_logo.png" width="100" />
-  <h1>Fitlix AI Trainer Plugin 🧠⚡</h1>
-  <p><strong>Production-grade AI fitness analysis engine in pure Javascript & MediaPipe.</strong><p>
-  <br/>
-</div>
+# Fitlix AI Trainer — Context.md
 
-## 🚀 Overview
+## Product Summary
 
-The **Fitlix AI Trainer Plugin** is a high-performance, real-time body tracking engine built to be embedded inside the **Fitlix Flutter App** via WebView. It uses true edge-AI to track body position with zero latency, providing users with live rep counts and form correction simply using their mobile camera.
+Fitlix AI Trainer is a real-time, camera-based workout analysis system that runs inside the Fitlix Flutter app using a WebView-based JavaScript engine. Its purpose is to detect human body posture through the device camera, analyze exercise form in real time, count valid repetitions, reject invalid reps, and give instant visual and voice feedback to the user.
 
-### ✨ What Makes it Special?
-* 🎯 **Zero-Latency Edge AI:** Uses MediaPipe Pose to compute 33 skeletal landmarks at 30+ FPS directly on the mobile device. No server uploads. Absolute privacy.
-* 📏 **Deep Posture Analyzers:** It doesn't just count reps—it explicitly checks your body alignment, knee tracking, and form depth. 
-* 🗣️ **Intelligent Voice Feedback:** The Web Speech API dynamically speaks rep counts so the user never has to look at the screen.
-* 📱 **Flutter Optimized:** Designed to be embedded perfectly as a WebView. It handles dynamic resizing safely and communicates smoothly via message handlers.
+This is not a generic fitness content app. It is an interactive AI workout assistant focused on live posture analysis, rep counting, and form correction using on-device pose estimation. The system should feel like a lightweight real-time personal trainer.
+
+The current implementation direction is based on a MediaPipe Pose powered browser engine embedded in Flutter via WebView. The plugin already targets multiple workouts, voice feedback, posture analysis, anti-cheat logic, and Flutter bridge communication. :contentReference[oaicite:0]{index=0}
 
 ---
 
-## 🛠 Features
+## Core Product Goals
 
-| Feature | Description |
-|---|---|
-| **Hash & Query Routing** | Initialize dynamic workouts via stable URL hash maps or fallback queries (e.g., `index.html#squat`). |
-| **Glassmorphic UI** | Premium iOS-like athletic design with backdrop filters and precise micro-animations handling error states. |
-| **Complete Posture AI** | Validates straightness (for Push-Ups/Planks) and proper joint mechanics tracking (for Squats/Lunges). |
-| **Anti-Cheat Mechanics** | Minimum rep duration windows and directional strict-angle thresholds prevent spam points. |
-
-## 🏋️‍♂️ Supported Workouts
-
-Call the specific analysis mode by appending the workout key to the file path structure: `index.html#{workoutKey}`
-
-* `pushup` (Push-Up - Tracks back straightness & elbow depth)
-* `squat` (Squat - Tracks depth and hip/knee alignment)
-* `pullup` (Pull-Up - Tracks arm tension)
-* `lunge` (Lunge)
-* `situp` (Sit-Up)
-* `bicep_curl` (Bicep Curls)
-* `shoulder_press` (Shoulder Press)
-* `jumping_jack` (Jumping Jacks)
+1. Use the mobile camera to track the user’s body in real time.
+2. Detect pose landmarks fully on-device with low latency.
+3. Count only valid repetitions.
+4. Detect incorrect posture and provide immediate corrective feedback.
+5. Give clear UI feedback using overlays, labels, animations, and rep indicators.
+6. Speak important feedback such as rep count or posture correction through voice.
+7. Run inside the Flutter app through WebView without requiring backend inference.
+8. Support multiple exercise modes through route-based workout selection. :contentReference[oaicite:1]{index=1}
 
 ---
 
-## 🔗 Integrating with Flutter
+## Primary User Experience
 
-The simplest, cleanest way to bridge this robust engine into your Flutter application is via **`flutter_inappwebview`**.
+The user opens a workout inside the Fitlix Flutter app.
 
-### 1. Embedded URL Load 
-Initialize the controller with the physical static file and pass the workout string to the URL hash dynamically for routing:
+Before the workout starts:
+- The user sees a short coaching preview.
+- The preview shows “Do This” and “Avoid This” examples for the selected exercise.
+- The preview is skippable.
+- If online exercise media is unavailable, the app should use local fallback videos. :contentReference[oaicite:2]{index=2}
 
-```dart
-InAppWebView(
-  initialUrlRequest: URLRequest(
-    // Example: Passing routing dynamically via hash mapping "#pushup"
-    url: WebUri("file:///android_asset/flutter_assets/assets/fitlix/index.html#pushup")
-  ),
-  onWebViewCreated: (controller) {
-    // Controller Setup
-  },
-)
-```
-
-> **Note:** If hash routes (`#`) drop in older webviews, you can fallback to standard query parameters (`?workout=pushup`).
-
-### 2. Consuming AI Rep Counts
-Listen to the `flutterBridge` to get live data out of the HTML layer as the user completes reps:
-```dart
-controller.addJavaScriptHandler(
-  handlerName: 'flutterBridge',
-  callback: (args) {
-    final repCount = args[0]['reps'];
-    print('User just completed rep number: $repCount');
-  }
-);
-```
-
-### 3. Emulating Native Back Button
-The GUI has a software back-button that pushes to a native Dart handler instead of breaking the WebView stack! Just attach this:
-```dart
-controller.addJavaScriptHandler(
-  handlerName: 'onBackPressed',
-  callback: (args) {
-    Navigator.of(context).pop();
-  }
-);
-```
+When the workout starts:
+- The camera opens.
+- The pose engine starts detecting the body.
+- The system draws a live skeleton or posture overlay.
+- The user gets instant feedback:
+  - rep count
+  - correct / incorrect posture
+  - exercise state
+  - warning messages
+- The system should visually highlight errors when posture is wrong.
+- Voice feedback should announce reps and optionally posture corrections. :contentReference[oaicite:3]{index=3}
 
 ---
 
-## 🧠 Advanced Posture Correction Engine
+## High-Level Architecture
 
-In the newest generation of this plugin, we moved past just "counting elbows". Open `script.js` directly to modify the `analyzePosture()` function. 
+### 1. Flutter Layer
+Flutter is the host application.
 
-If a user arches their back during a pushup, the engine detects the loss of the 155-degree straightness line between the **Shoulder (LM: 11)**, **Hip (LM: 23)**, and **Ankle (LM: 27)**. It instantly flags an error and triggers the `shakeAlert` red error micro-animation, urging the user to `"Keep Back Straight!"`.
+Responsibilities:
+- Open the AI trainer screen
+- Load the HTML/JS trainer inside WebView
+- Pass the selected workout mode
+- Receive rep counts and status messages from JavaScript
+- Handle navigation events such as back press
+- Store or display workout results in the native app
+
+Recommended WebView bridge:
+- `flutter_inappwebview` :contentReference[oaicite:4]{index=4}
+
+### 2. Web Trainer Layer
+This is the embedded HTML/CSS/JavaScript engine loaded inside the WebView.
+
+Responsibilities:
+- Access the device camera
+- Initialize MediaPipe Pose
+- Detect landmarks
+- Run workout-specific posture analysis
+- Count valid reps
+- Reject fake or incomplete reps
+- Update UI overlays and warnings
+- Trigger voice feedback
+- Send events back to Flutter
+
+### 3. Pose Detection Layer
+Use MediaPipe Pose for real-time body landmark detection.
+
+Expected behavior:
+- 33 body landmarks
+- fully on-device
+- low latency
+- no server upload
+- privacy-friendly architecture :contentReference[oaicite:5]{index=5}
 
 ---
 
-## 🎨 UI & Aesthetics
+## Workout Routing
 
-We've overhauled standard dark mode. The UI is built entirely using:
-- **HSL/Hex blending** optimized for contrast.
-- **Glassmorphism panels** (`backdrop-filter`) ensuring that dynamic gym lighting behind the user naturally blurs into UI cards.
-- **Micro-Animations**, such as the `repFlash` visual pop, explicitly making interactions feel alive.
+Workout mode is selected using URL hash or query parameter.
+
+Examples:
+- `index.html#pushup`
+- `index.html#squat`
+
+Fallback:
+- `index.html?workout=pushup`
+
+The Web trainer should read the route and initialize the correct workout analyzer. :contentReference[oaicite:6]{index=6}
 
 ---
 
-<div align="center">
-  <b>Built for Fitlix</b> - Re-envisioning the AI Fitness Ecosystem.
-</div>
+## Supported Workouts
+
+Current supported workout keys:
+- `pushup`
+- `squat`
+- `pullup`
+- `lunge`
+- `situp`
+- `bicep_curl`
+- `shoulder_press`
+- `jumping_jack` :contentReference[oaicite:7]{index=7}
+
+Each workout must have:
+- setup configuration
+- landmark usage rules
+- rep counting logic
+- posture validation logic
+- invalid rep rejection logic
+- real-time feedback messages
+
+---
+
+## Main Functional Requirements
+
+### A. Camera and Pose Tracking
+- Start camera safely inside mobile WebView
+- Handle permission errors gracefully
+- Start pose detection once video is ready
+- Maintain smooth real-time updates
+- Handle camera stop / resume safely
+
+### B. Pose Overlay
+- Draw body landmarks and connectors on screen
+- Show real-time skeleton overlay
+- Support visual state changes:
+  - normal state
+  - correct posture state
+  - wrong posture state
+- Prefer green for valid posture and red for incorrect posture if visually supported
+
+### C. Rep Counting
+- Count only completed reps
+- A rep must pass defined angle / depth / state transition rules
+- Prevent double-counting
+- Reject noisy movement
+- Reject partial reps
+- Use minimum rep duration windows to block cheating or spam counting :contentReference[oaicite:8]{index=8}
+
+### D. Form Correction
+The system must do more than detect motion. It must validate posture quality.
+
+Examples:
+- Push-up:
+  - detect elbow bend
+  - detect body straightness
+  - warn if back is not straight
+- Squat:
+  - detect squat depth
+  - detect knee tracking
+  - validate body alignment
+- Similar posture-specific validation should be added per workout. :contentReference[oaicite:9]{index=9}
+
+### E. Anti-Cheat Logic
+The system should not reward fake movement.
+
+Examples:
+- too-fast reps should not count
+- wrong direction transitions should not count
+- incomplete angle range should not count
+- unstable jitter should not count
+
+Strict thresholds and directional logic are required. :contentReference[oaicite:10]{index=10}
+
+### F. Voice Feedback
+Use browser-based speech synthesis / Web Speech API where supported.
+
+Voice feedback examples:
+- “1”
+- “2”
+- “Keep back straight”
+- “Go lower”
+- “Good rep”
+
+Voice should be:
+- optional if needed
+- non-spammy
+- rate-limited to avoid repeated nagging :contentReference[oaicite:11]{index=11}
+
+### G. Flutter Communication
+The JavaScript layer must send structured data back to Flutter.
+
+Existing bridge example:
+- handler name: `flutterBridge`
+
+Example payload ideas:
+```json
+{
+  "type": "rep_update",
+  "workout": "pushup",
+  "reps": 5,
+  "form": "good",
+  "message": "Good rep"
+}
